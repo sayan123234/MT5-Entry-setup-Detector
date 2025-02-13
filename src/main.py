@@ -25,7 +25,7 @@ def initialize_mt5():
         return False
         
     # MT5 login credentials from environment variables
-    account = int(os.getenv("MT5_ACCOUNT"))
+    account = int(os.getenv("MT5_LOGIN"))
     password = os.getenv("MT5_PASSWORD")
     server = os.getenv("MT5_SERVER")
     
@@ -46,24 +46,22 @@ def main():
     if not initialize_mt5():
         return
         
-    try:
-        analyzer = MarketAnalyzer()
-        
-        while True:
-            try:
-                analyzer.analyze_markets()
-                time.sleep(300)  # 5 minute interval
-                
-            except KeyboardInterrupt:
-                logging.info("Shutting down...")
-                break
-                
-            except Exception as e:
-                logging.error(f"Error in main loop: {str(e)}")
-                time.sleep(60)  # Wait before retrying
-                
-    finally:
-        mt5.shutdown()
+    analyzer = MarketAnalyzer()
+    
+    while True:
+        try:
+            analyzer.analyze_markets()
+            logging.info("Analysis cycle completed. Waiting for 5 minutes before next cycle...")
+            time.sleep(300)  # 5 minute interval
+            
+        except KeyboardInterrupt:
+            logging.info("Manual shutdown initiated. Exiting...")
+            break
+            
+        except Exception as e:
+            logging.error(f"Error in main loop: {str(e)}")
+            logging.info("Retrying in 60 seconds...")
+            time.sleep(60)  # Wait before retrying
 
 if __name__ == "__main__":
     main()
