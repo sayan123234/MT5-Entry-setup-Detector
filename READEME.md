@@ -5,9 +5,11 @@ A Python-based Fair Value Gap (FVG) detection system for MetaTrader 5. This proj
 ## Features
 
 - Hierarchical timeframe analysis (Monthly → Weekly → Daily → H4)
-- Automated FVG detection with swing point validation
+- Detection of both confirmed and potential FVGs
+- Smart candle closure detection based on broker time
+- 24-hour alert deduplication system
 - Support for multiple currency pairs, metals, and crypto
-- Real-time Telegram alerts
+- Real-time Telegram alerts with detailed status
 - Configurable settings via YAML
 - Comprehensive logging system
 
@@ -16,17 +18,20 @@ A Python-based Fair Value Gap (FVG) detection system for MetaTrader 5. This proj
 ```
 fvg_detector/
 ├── config/
-│   └── config.yaml     # Configuration settings
+│   └── config.yaml        # Configuration settings
 ├── src/
 │   ├── __init__.py
-│   ├── main.py         # Entry point
-│   ├── config_handler.py
-│   ├── market_analyzer.py
-│   ├── fvg_finder.py
-│   └── utils.py
-├── logs/               # Log files directory
-├── .env               # Environment variables
-└── requirements.txt   # Dependencies
+│   ├── main.py           # Entry point
+│   ├── config_handler.py  # Configuration management
+│   ├── market_analyzer.py # Market analysis logic
+│   ├── fvg_finder.py     # FVG detection logic
+│   ├── timeframe_utils.py # Timeframe handling
+│   ├── alert_cache_handler.py # Alert deduplication
+│   └── utils.py          # Utility functions
+├── logs/                 # Log files directory
+├── cache/               # Alert cache directory
+├── .env                # Environment variables
+└── requirements.txt    # Dependencies
 ```
 
 ## Prerequisites
@@ -51,7 +56,7 @@ pip install -r requirements.txt
 
 3. Create a `.env` file in the root directory with your credentials:
 ```
-MT5_ACCOUNT=your_account_number
+MT5_LOGIN=your_account_number
 MT5_PASSWORD=your_password
 MT5_SERVER=your_server
 TELEGRAM_TOKEN=your_bot_token
@@ -62,89 +67,102 @@ TELEGRAM_CHAT_ID=your_chat_id
 
 ## Configuration
 
-### Supported Symbols
-
-The system supports the following symbols by default:
-
-- Major Pairs: EURUSDm, USDJPYm, GBPUSDm, USDCHFm, USDCADm, AUDUSDm, NZDUSDm
-- Crosses: EURGBPm, EURJPYm, EURCHFm, EURAUDm, EURCADm, GBPJPYm, GBPCHFm, GBPAUDm, GBPCADm
-- Metals: XAUUSDm, XAGUSDm
-- Crypto: BTCUSDm, ETHUSDm
-
 ### Timeframe Settings
 
-You can configure lookback periods for each timeframe in `config.yaml`:
+Configure lookback periods for each timeframe in `config.yaml`:
 
 ```yaml
 timeframes:
-  monthly:
-    value: 16408  # MT5.TIMEFRAME_MN1
+  MN1:
     max_lookback: 12
-  weekly:
-    value: 16386  # MT5.TIMEFRAME_W1
+  W1:
     max_lookback: 24
-  daily:
-    value: 16385  # MT5.TIMEFRAME_D1
+  D1:
     max_lookback: 50
-  h4:
-    value: 16388  # MT5.TIMEFRAME_H4
+  H4:
     max_lookback: 100
+```
+
+### Symbol Configuration
+
+The system supports various symbol categories:
+
+```yaml
+symbols:
+  major_pairs:
+    - "EURUSDm"
+    - "USDJPYm"
+    # ... more pairs
+  crosses:
+    - "EURGBPm"
+    - "EURJPYm"
+    # ... more crosses
+  metals:
+    - "XAUUSDm"
+    - "XAGUSDm"
+  crypto:
+    - "BTCUSDm"
+    - "ETHUSDm"
 ```
 
 ### FVG Settings
 
-Customize FVG detection parameters:
+Configure FVG detection parameters:
 
 ```yaml
 fvg_settings:
-  min_size: 0.0001    # Minimum FVG size
-  swing_window: 5     # Candles to check for swing points
+  min_size: 0.0001  # Minimum FVG size
 ```
 
-## Usage
+## Alert System
 
-Run the FVG detector:
+The system now features two types of alerts:
+1. Confirmed FVGs: All candles in the pattern have closed
+2. Potential FVGs: Pattern detected but some candles are still forming
 
-```bash
-python src/main.py
+Alert features:
+- Detailed candle status information
+- 24-hour deduplication (no repeat alerts for same pattern)
+- Automatic cache cleanup at midnight
+- Separate tracking for potential and confirmed patterns
+
+Sample alert message:
+```
+🔍 Confirmed FVG Detected on EURUSD
+⏱ Timeframe: D1
+📊 Type: bullish
+💹 Size: 0.00123
+🔝 Top: 1.12345
+⬇ Bottom: 1.12222
+🕒 Time: 2024-02-17 10:00:00
 ```
 
-The system will:
-1. Connect to your MT5 terminal
-2. Start scanning configured symbols
-3. Check for FVGs in order of timeframes (Monthly → Weekly → Daily → H4)
-4. Send alerts when FVGs are found
-5. Log all activities
+## Time Synchronization
 
-## Alerts
-
-When an FVG is detected, you'll receive a Telegram alert with:
-- Symbol name
-- Timeframe
-- FVG type (bullish/bearish)
-- Price range
-- Size of the gap
-- Timestamp
-
-## Logging
-
-Logs are stored in the `logs/` directory with the filename format `fvg_detector_YYYYMMDD.log`. Each log entry includes:
-- Timestamp
-- Log level
-- Detailed message about the operation or error
+The system now ensures accurate candle closure detection by:
+- Using broker server time instead of local time
+- Proper handling of timeframe-specific closures
+- Accurate detection of forming vs closed candles
 
 ## Error Handling
 
-The system includes comprehensive error handling for:
-- MT5 connection issues
-- Data retrieval problems
-- Configuration errors
-- Alert sending failures
+Enhanced error handling for:
+- MT5 connection and data retrieval
+- Time synchronization issues
+- Alert deduplication and caching
+- Configuration validation
+
+## Logging
+
+Comprehensive logging system with:
+- Daily log rotation
+- Detailed timeframe analysis logs
+- Alert and cache operation tracking
+- Error and warning notifications
 
 ## Contributing
 
 Feel free to submit issues, fork the repository, and create pull requests for any improvements.
-
 
 ## Disclaimer
 

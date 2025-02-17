@@ -1,93 +1,83 @@
-from typing import Dict
 import logging
-from datetime import datetime
-from config_handler import TimeFrame, ConfigHandler
+from typing import Dict
+from config_handler import ConfigHandler, TimeFrame
 from fvg_finder import FVGFinder
 from utils import send_telegram_alert
+from alert_cache_handler import AlertCache
 
 class MarketAnalyzer:
     def __init__(self):
         self.config = ConfigHandler()
         self.fvg_finder = FVGFinder()
         self.logger = logging.getLogger(__name__)
-        self.signal_cache = {}  # Format: {symbol_timeframe: timestamp}
-    
-    def is_duplicate_signal(self, symbol: str, timeframe: TimeFrame) -> bool:
-        """Check if we've already sent a signal for this symbol/timeframe today"""
-        key = f"{symbol}_{timeframe.name}"
-        if key in self.signal_cache:
-            last_signal_time = self.signal_cache[key]
-            now = datetime.now()
-            return (last_signal_time.date() == now.date())
-        return False
-    
-    def update_signal_cache(self, symbol: str, timeframe: TimeFrame):
-        """Update the signal cache with current timestamp"""
-        key = f"{symbol}_{timeframe.name}"
-        self.signal_cache[key] = datetime.now()
+        self.alert_cache = AlertCache()
+        self.timeframe_hierarchy = [
+            TimeFrame.MONTHLY,
+            TimeFrame.WEEKLY,
+            TimeFrame.DAILY,
+            TimeFrame.H4
+        ]
 
     def analyze_markets(self):
-        """Analyze all symbols across timeframes"""
-        available_symbols = self.config.get_watchlist_symbols()
-        
-        if not available_symbols:
-            return
-        
-        for symbol in available_symbols:
-            try:
-                self.analyze_symbol(symbol)
-            except Exception as e:
-                self.logger.error(f"Error analyzing {symbol}: {str(e)}")
-                continue
-    
+        """Analyze all markets for FVG patterns"""
+        # Cache cleanup is now handled automatically in is_duplicate()
+        symbols = self.config.get_watchlist_symbols()
+        self.logger.info(f"Starting analysis for {len(symbols)} symbols")
+
+        for symbol in symbols:
+            self.analyze_symbol(symbol)
+
     def analyze_symbol(self, symbol: str):
-        """Analyze a single symbol through timeframe hierarchy"""
-        for timeframe in [TimeFrame.MONTHLY, TimeFrame.WEEKLY, 
-                         TimeFrame.DAILY, TimeFrame.H4]:
-            
-            if self.is_duplicate_signal(symbol, timeframe):
-                continue
-            
-            analysis = self.fvg_finder.analyze_timeframe(symbol, timeframe)
-            
-            if analysis and 'fvg' in analysis:
-                self.logger.info(f"Found FVG for {symbol} on {timeframe.name}")
-                self.process_results(symbol, timeframe, analysis)
-                break
-    
-    def process_results(self, symbol: str, timeframe: TimeFrame, analysis: Dict):
-        """Process and notify analysis results"""
-        try:
-            alert_data = {
-                'symbol': symbol,
-                'timeframe': timeframe.name,
-                'analysis': analysis
-            }
-            
-            message = self.format_alert_message(alert_data)
-            if send_telegram_alert(message):
-                self.logger.info(f"Alert sent for {symbol}")
-            else:
-                self.logger.error(f"Failed to send alert for {symbol}")
-            
-            self.update_signal_cache(symbol, timeframe)
+        self.logger.info(f"Analyzing {symbol}")
+
+        for timeframe in self.timeframe_hierarchy:
+            try:
+                should_continue, analysis = self.fvg_finder.analyze_timeframe(symbol, timeframe)
                 
-        except Exception as e:
-            self.logger.error(f"Error processing results for {symbol}: {str(e)}")
-    
-    def format_alert_message(self, data: Dict) -> str:
-        """Format alert message for Telegram"""
-        try:
-            msg = f"🔍 FVG Alert for {data['symbol']}\n"
-            msg += f"Timeframe: {data['timeframe']}\n\n"
-            
-            fvg = data['analysis']['fvg']
-            msg += f"Type: {fvg['type'].upper()}\n"
-            msg += f"Size: {fvg['size']:.5f}\n"
-            msg += f"Time: {fvg['time'].strftime('%Y-%m-%d %H:%M')}\n"
-            msg += f"Price Range: {fvg['bottom']:.5f} - {fvg['top']:.5f}\n"
-            
-            return msg
-        except Exception as e:
-            self.logger.error(f"Error formatting alert message: {str(e)}")
-            return f"Error formatting alert for {data['symbol']}"
+                if not should_continue and analysis:  # Found an FVG
+                    self._handle_complete_analysis(analysis)
+                    break  # Stop checking lower timeframes
+                
+            except Exception as e:
+                self.logger.error(f"Error analyzing {symbol} in {timeframe}: {e}")
+                continue
+
+    def _handle_complete_analysis(self, analysis: Dict):
+        """Handle completed analysis and send alerts if needed"""
+        symbol = analysis['symbol']
+        timeframe = analysis['timeframe']
+        fvg = analysis['fvg']
+
+        # Determine if this is a potential or confirmed FVG
+        is_confirmed = fvg.get('is_confirmed', False)
+        alert_type = f"{fvg['type']}_{'confirmed' if is_confirmed else 'potential'}"
+        
+        # Check for duplicate before creating alert
+        if self.alert_cache.is_duplicate(symbol, timeframe, alert_type):
+            self.logger.debug(f"Skipping duplicate alert for {symbol} on {timeframe}")
+            return
+
+        # Create alert message
+        alert_prefix = "⚠️ Potential" if not is_confirmed else "🔍 Confirmed"
+        message = (
+            f"{alert_prefix} FVG Detected on {symbol}\n"
+            f"⏱ Timeframe: {timeframe}\n"
+            f"📊 Type: {fvg['type']}\n"
+            f"💹 Size: {fvg['size']:.5f}\n"
+            f"🔝 Top: {fvg['top']:.5f}\n"
+            f"⬇ Bottom: {fvg['bottom']:.5f}\n"
+            f"🕒 Time: {fvg['time']}\n"
+        )
+
+        if not is_confirmed:
+            message += "\n📊 Candle Status:"
+            for candle_num, status in fvg['candle_status'].items():
+                closed_status = "✅ Closed" if status['closed'] else "⏳ Forming"
+                message += f"\n{candle_num}: {closed_status}"
+
+        self.logger.info(f"Found {'potential' if not is_confirmed else 'confirmed'} FVG for {symbol} on {timeframe}")
+
+        # Send alert and cache it
+        if self.config.telegram_config.get('enabled', False):
+            if send_telegram_alert(message):
+                self.alert_cache.add_alert(symbol, timeframe, alert_type)
