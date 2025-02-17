@@ -7,11 +7,13 @@ A Python-based Fair Value Gap (FVG) detection system for MetaTrader 5. This proj
 - Hierarchical timeframe analysis (Monthly → Weekly → Daily → H4)
 - Detection of both confirmed and potential FVGs
 - Smart candle closure detection based on broker time
+- Dynamic symbol suffix handling for different brokers
 - 24-hour alert deduplication system
 - Support for multiple currency pairs, metals, and crypto
 - Real-time Telegram alerts with detailed status
 - Configurable settings via YAML
 - Comprehensive logging system
+- Automatic cache cleanup on program exit
 
 ## Project Structure
 
@@ -67,9 +69,38 @@ TELEGRAM_CHAT_ID=your_chat_id
 
 ## Configuration
 
+### Symbol Configuration
+
+The system supports dynamic symbol suffixes for different brokers and various symbol categories:
+
+```yaml
+# Broker-specific symbol suffix
+# Examples:
+# - For suffix 'm': "EURUSDm" (e.g., "symbol_suffix: m")
+# - For suffix '.r': "EURUSD.r" (e.g., "symbol_suffix: .r")
+# - For no suffix: EURUSD (leave empty)
+symbol_suffix: "m"
+
+symbols:
+  major_pairs:
+    - "EURUSD"    # Will become EURUSDm with suffix
+    - "USDJPY"    # Will become USDJPYm with suffix
+    # ... more pairs
+  crosses:
+    - "EURGBP"
+    - "EURJPY"
+    # ... more crosses
+  metals:
+    - "XAUUSD"
+    - "XAGUSD"
+  crypto:
+    - "BTCUSD"
+    - "ETHUSD"
+```
+
 ### Timeframe Settings
 
-Configure lookback periods for each timeframe in `config.yaml`:
+Configure lookback periods for each timeframe:
 
 ```yaml
 timeframes:
@@ -83,28 +114,6 @@ timeframes:
     max_lookback: 100
 ```
 
-### Symbol Configuration
-
-The system supports various symbol categories:
-
-```yaml
-symbols:
-  major_pairs:
-    - "EURUSDm"
-    - "USDJPYm"
-    # ... more pairs
-  crosses:
-    - "EURGBPm"
-    - "EURJPYm"
-    # ... more crosses
-  metals:
-    - "XAUUSDm"
-    - "XAGUSDm"
-  crypto:
-    - "BTCUSDm"
-    - "ETHUSDm"
-```
-
 ### FVG Settings
 
 Configure FVG detection parameters:
@@ -116,14 +125,14 @@ fvg_settings:
 
 ## Alert System
 
-The system now features two types of alerts:
+The system features two types of alerts:
 1. Confirmed FVGs: All candles in the pattern have closed
 2. Potential FVGs: Pattern detected but some candles are still forming
 
 Alert features:
 - Detailed candle status information
 - 24-hour deduplication (no repeat alerts for same pattern)
-- Automatic cache cleanup at midnight
+- Automatic cache cleanup at midnight and program exit
 - Separate tracking for potential and confirmed patterns
 
 Sample alert message:
@@ -139,10 +148,18 @@ Sample alert message:
 
 ## Time Synchronization
 
-The system now ensures accurate candle closure detection by:
+The system ensures accurate candle closure detection by:
 - Using broker server time instead of local time
 - Proper handling of timeframe-specific closures
 - Accurate detection of forming vs closed candles
+
+## Cache Management
+
+The system includes automatic cache management:
+- 24-hour alert deduplication
+- Automatic cleanup at midnight
+- Cache removal on program exit (Ctrl+C)
+- Separate caching for potential and confirmed alerts
 
 ## Error Handling
 
@@ -151,6 +168,7 @@ Enhanced error handling for:
 - Time synchronization issues
 - Alert deduplication and caching
 - Configuration validation
+- Symbol suffix validation
 
 ## Logging
 

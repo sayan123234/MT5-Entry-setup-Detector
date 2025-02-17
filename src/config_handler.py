@@ -2,6 +2,8 @@ import yaml
 from enum import Enum
 from typing import Dict, List, Any
 import MetaTrader5 as mt5
+import logging
+from pathlib import Path
 
 class TimeFrame(Enum):
     MONTHLY = "MN1"
@@ -24,22 +26,42 @@ class TimeFrame(Enum):
         return self.value
 
 class ConfigHandler:
-    def __init__(self, config_file="config\config.yaml"):
-        self.config_file = config_file
+    def __init__(self, config_file=Path("config") / "config.yaml"):
+        self.logger = logging.getLogger(__name__)
+        self.config_file = Path(config_file)
         self.config = self._load_config()
+        self.symbol_suffix = self._get_symbol_suffix()
 
     def _load_config(self) -> Dict[str, Any]:
         try:
             with open(self.config_file, "r") as f:
                 return yaml.safe_load(f)
         except Exception as e:
-            print(f"Error loading config file '{self.config_file}': {e}")
+            self.logger.error(f"Error loading config file '{self.config_file}': {e}")
             return {}
 
+    def _get_symbol_suffix(self) -> str:
+        """Get the symbol suffix from config or return empty string if not set"""
+        suffix = self.config.get("symbol_suffix", "")
+        if suffix:
+            # If suffix starts with '.', keep it as is, otherwise add it to the symbol directly
+            if suffix.startswith('.'):
+                return suffix
+            return f"{suffix}"
+        return ""
+
+    def _apply_suffix(self, symbol: str) -> str:
+        """Apply the broker-specific suffix to a symbol"""
+        if not self.symbol_suffix:
+            return symbol
+        return f"{symbol}{self.symbol_suffix}"
+
     def get_watchlist_symbols(self) -> List[str]:
+        """Get list of symbols with proper suffix applied"""
         symbols = []
         for category in self.config.get("symbols", {}).values():
-            symbols.extend(category)
+            # Apply suffix to each symbol
+            symbols.extend(self._apply_suffix(symbol) for symbol in category)
         return symbols
 
     def get_timeframes(self) -> Dict[TimeFrame, int]:
