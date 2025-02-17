@@ -47,8 +47,6 @@ pythonenv*
 logs/
 *.log
 signals_cache.json
-config.yaml
-!config/config.example.yaml
 
 # Operating System
 .DS_Store

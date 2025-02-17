@@ -1,0 +1,48 @@
+timeframes:
+  MN1:
+    max_lookback: 12
+  W1:
+    max_lookback: 24
+  D1:
+    max_lookback: 50
+  H4:
+    max_lookback: 100
+
+# Broker-specific symbol suffix
+# Examples:
+# - For suffix 'm': "EURUSDm"
+# - For suffix '.r': "EURUSD.r"
+# - For no suffix: leave empty
+symbol_suffix: "m"
+
+symbols:
+  major_pairs:
+    - "EURUSD"
+    - "USDJPY"
+    - "GBPUSD"
+    - "USDCHF"
+    - "USDCAD"
+    - "AUDUSD"
+    - "NZDUSD"
+  crosses:
+    - "EURGBP"
+    - "EURJPY"
+    - "EURCHF"
+    - "EURAUD"
+    - "EURCAD"
+    - "GBPJPY"
+    - "GBPCHF"
+    - "GBPAUD"
+    - "GBPCAD"
+  metals:
+    - "XAUUSD"
+    - "XAGUSD"
+  crypto:
+    - "BTCUSD"
+    - "ETHUSD"
+
+fvg_settings:
+  min_size: 0.0001
+
+telegram:
+  enabled: true

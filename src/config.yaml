@@ -1,0 +1,41 @@
+timeframes:
+  MN1:
+    max_lookback: 12
+  W1:
+    max_lookback: 24
+  D1:
+    max_lookback: 50
+  H4:
+    max_lookback: 100
+
+symbols:
+  major_pairs:
+    - "EURUSDm"
+    - "USDJPYm"
+    - "GBPUSDm"
+    - "USDCHFm"
+    - "USDCADm"
+    - "AUDUSDm"
+    - "NZDUSDm"
+  crosses:
+    - "EURGBPm"
+    - "EURJPYm"
+    - "EURCHFm"
+    - "EURAUDm"
+    - "EURCADm"
+    - "GBPJPYm"
+    - "GBPCHFm"
+    - "GBPAUDm"
+    - "GBPCADm"
+  metals:
+    - "XAUUSDm"
+    - "XAGUSDm"
+  crypto:
+    - "BTCUSDm"
+    - "ETHUSDm"
+
+fvg_settings:
+  min_size: 0.0001
+
+telegram:
+  enabled: true
