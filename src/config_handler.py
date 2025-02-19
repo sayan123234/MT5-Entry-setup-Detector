@@ -10,35 +10,119 @@ class TimeFrame(Enum):
     WEEKLY = "W1"
     DAILY = "D1"
     H4 = "H4"
+    H1 = "H1"
+    M15 = "M15"
+    M5 = "M5"
+    M1 = "M1"
+    
+    def __lt__(self, other):
+        # Order from highest to lowest timeframe
+        order = ["MN1", "W1", "D1", "H4", "H1", "M15", "M5", "M1"]
+        # Higher timeframe should be less than lower timeframe in index
+        return order.index(self.value) > order.index(other.value)
 
     @property
     def mt5_timeframe(self):
-        """Get the corresponding MT5 timeframe constant"""
         mapping = {
             "MN1": mt5.TIMEFRAME_MN1,
             "W1": mt5.TIMEFRAME_W1,
             "D1": mt5.TIMEFRAME_D1,
-            "H4": mt5.TIMEFRAME_H4
+            "H4": mt5.TIMEFRAME_H4,
+            "H1": mt5.TIMEFRAME_H1,
+            "M15": mt5.TIMEFRAME_M15,
+            "M5": mt5.TIMEFRAME_M5,
+            "M1": mt5.TIMEFRAME_M1
         }
         return mapping[self.value]
-
-    def __str__(self):
-        return self.value
 
 class ConfigHandler:
     def __init__(self, config_file=Path("config") / "config.yaml"):
         self.logger = logging.getLogger(__name__)
         self.config_file = Path(config_file)
-        self.config = self._load_config()
+        self.config = {}
+        self._load_config()
+        if not self.validate_config(self.config):
+            raise ValueError("Invalid configuration")
         self.symbol_suffix = self._get_symbol_suffix()
+        self.timeframe_hierarchy = self._setup_timeframe_hierarchy()
 
-    def _load_config(self) -> Dict[str, Any]:
+    def _load_config(self) -> None:
+        """Load configuration from YAML file"""
         try:
-            with open(self.config_file, "r") as f:
-                return yaml.safe_load(f)
+            if not self.config_file.exists():
+                self.logger.error(f"Configuration file not found: {self.config_file}")
+                raise FileNotFoundError(f"Configuration file not found: {self.config_file}")
+
+            with open(self.config_file, 'r') as f:
+                self.config = yaml.safe_load(f)
+
+            if not self.config:
+                raise ValueError("Empty configuration file")
+
+        except yaml.YAMLError as e:
+            self.logger.error(f"Error parsing YAML configuration: {e}")
+            raise
         except Exception as e:
-            self.logger.error(f"Error loading config file '{self.config_file}': {e}")
-            return {}
+            self.logger.error(f"Error loading configuration: {e}")
+            raise
+
+    def _setup_timeframe_hierarchy(self) -> Dict[TimeFrame, List[TimeFrame]]:
+        """Setup the hierarchy of timeframes"""
+        timeframes = list(TimeFrame)
+        hierarchy = {}
+        
+        for i, tf in enumerate(timeframes):
+            # For each timeframe, add all lower timeframes as potential entry timeframes
+            hierarchy[tf] = timeframes[i+1:]
+            
+        return hierarchy
+
+    def validate_timeframe_hierarchy(self) -> bool:
+        """Validate that the timeframe hierarchy is properly configured"""
+        try:
+            # Get all configured timeframes
+            configured_timeframes = set(TimeFrame(tf) for tf in self.config.get('timeframes', {}))
+            
+            # Validate each hierarchical relationship
+            for htf, ltf_list in self.timeframe_hierarchy.items():
+                # Skip validation if higher timeframe isn't configured
+                if htf not in configured_timeframes:
+                    continue
+                    
+                # Only validate relationships for configured lower timeframes
+                for ltf in ltf_list:
+                    if ltf in configured_timeframes:
+                        if not htf > ltf:
+                            self.logger.error(f"Invalid timeframe relationship: {htf.value} should be higher than {ltf.value}")
+                            return False
+                            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error validating timeframe hierarchy: {e}")
+            return False
+
+    def validate_symbols(self) -> bool:
+        """Validate that configured symbols are available in MT5"""
+        valid_symbols = True
+        for symbol in self.get_watchlist_symbols():
+            if mt5.symbol_info(symbol) is None:
+                self.logger.warning(f"Symbol not available: {symbol}")
+                valid_symbols = False
+        return valid_symbols
+
+    def validate_config(self, config: dict) -> bool:
+        """Validate the configuration structure"""
+        required_fields = ['timeframes', 'symbols', 'fvg_settings']
+        if not all(field in config for field in required_fields):
+            self.logger.error("Missing required configuration fields")
+            return False
+            
+        if not isinstance(config.get('fvg_settings', {}).get('min_size'), (int, float)):
+            self.logger.error("Invalid FVG min_size configuration")
+            return False
+            
+        return True
 
     def _get_symbol_suffix(self) -> str:
         """Get the symbol suffix from config or return empty string if not set"""

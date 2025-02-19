@@ -4,6 +4,7 @@ import logging
 from config_handler import TimeFrame, ConfigHandler
 from typing import Dict, Optional, Tuple
 from timeframe_utils import TimeframeUtils
+from functools import lru_cache
 
 class FVGFinder:
     def __init__(self):
@@ -107,15 +108,53 @@ class FVGFinder:
         
         return None
 
-    def analyze_timeframe(self, symbol: str, timeframe: TimeFrame) -> Tuple[bool, Optional[Dict]]:
+    def is_fvg_mitigated(self, df: pd.DataFrame, fvg: Dict) -> bool:
+        """Check if price has entered the FVG zone"""
+        fvg_top = fvg['top']
+        fvg_bottom = fvg['bottom']
+        
+        # Get candles after FVG formation
+        post_fvg_df = df[df['time'] > fvg['time']]
+        
+        if fvg['type'] == 'bullish':
+            # Check if price dipped into bullish FVG
+            return (post_fvg_df['low'] < fvg_top).any()
+        elif fvg['type'] == 'bearish':
+            # Check if price rallied into bearish FVG
+            return (post_fvg_df['high'] > fvg_bottom).any()
+        return False
+    
+    @lru_cache(maxsize=100)
+    def get_cached_rates(self, symbol: str, timeframe: TimeFrame):
+        max_lookback = self.config.get_timeframes().get(timeframe, 100)
+        return mt5.copy_rates_from_pos(symbol, timeframe.mt5_timeframe, 0, max_lookback)
+    
+    def get_rates_safe(self, symbol: str, timeframe: TimeFrame, count: int) -> Optional[pd.DataFrame]:
+        try:
+            rates = mt5.copy_rates_from_pos(symbol, timeframe.mt5_timeframe, 0, count)
+            if rates is None:
+                self.logger.error(f"Failed to get rates for {symbol} {timeframe}")
+                return None
+                
+            df = pd.DataFrame(rates)
+            if len(df) < count * 0.8:  # Check if we got enough data
+                self.logger.warning(f"Insufficient data for {symbol} {timeframe}")
+                return None
+                
+            return df
+        except Exception as e:
+            self.logger.error(f"Error getting rates: {e}")
+            return None
+    
+    def analyze_timeframe(self, symbol: str, timeframe: TimeFrame):
         """Analyze a single timeframe for FVG or swing point."""
         try:
-            rates = mt5.copy_rates_from_pos(symbol, timeframe.mt5_timeframe, 0, 5000)
-            
-            if rates is None or len(rates) == 0:
-                return True, None
+            max_lookback = self.config.get_timeframes().get(timeframe, 100)  # Default to 100 if missing
+            df = self.get_rates_safe(symbol, timeframe, max_lookback)
 
-            df = pd.DataFrame(rates)
+            if df is None:
+                return True, None
+            
             df['time'] = pd.to_datetime(df['time'], unit='s')
 
             swing = self.find_swing(df)
@@ -124,6 +163,10 @@ class FVGFinder:
 
             fvg = self.find_fvg_before_swing(df, swing['index'], timeframe)
             if fvg:
+                # Add mitigation check for confirmed FVGs
+                if fvg['is_confirmed']:
+                    fvg['mitigated'] = self.is_fvg_mitigated(df, fvg)
+                
                 return False, {
                     'status': 'complete',
                     'symbol': symbol,

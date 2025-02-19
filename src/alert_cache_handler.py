@@ -8,10 +8,16 @@ class AlertCache:
     def __init__(self, cache_dir: str = "cache"):
         self.logger = logging.getLogger(__name__)
         self.cache_dir = Path(cache_dir)
-        self.cache_dir.mkdir(exist_ok=True)
+        try:
+            self.cache_dir.mkdir(exist_ok=True, mode=0o755)  # Add proper permissions
+        except Exception as e:
+            self.logger.error(f"Failed to create cache directory: {e}")
+            raise
+
         self.cache_file = self.cache_dir / f"fvg_alerts_{datetime.now().strftime('%Y%m%d')}.json"
         self.last_cleanup = None
         self.alerts = self._load_cache()
+        self.manage_cache_size()  # Add cache size management
 
     def _load_cache(self) -> dict:
         """Load the cache file for the current day or create a new one"""
@@ -102,3 +108,24 @@ class AlertCache:
             
         except Exception as e:
             self.logger.error(f"Error during cache cleanup: {e}")
+            
+    def manage_cache_size(self):
+        """Cleanup old cache files if total size exceeds limit"""
+        try:
+            MAX_CACHE_SIZE = 100 * 1024 * 1024  # 100MB
+            total_size = 0
+            cache_files = sorted(
+                self.cache_dir.glob('fvg_alerts_*.json'),
+                key=lambda x: x.stat().st_mtime
+            )
+            
+            for file in cache_files:
+                total_size += file.stat().st_size
+                if total_size > MAX_CACHE_SIZE:
+                    try:
+                        file.unlink()
+                        self.logger.info(f"Removed old cache file: {file}")
+                    except Exception as e:
+                        self.logger.error(f"Failed to remove cache file: {e}")
+        except Exception as e:
+            self.logger.error(f"Cache management error: {e}")

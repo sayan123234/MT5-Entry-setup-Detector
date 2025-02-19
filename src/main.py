@@ -21,21 +21,52 @@ def setup_logging():
         ]
     )
 
-def initialize_mt5() -> bool:
-    """Initialize MT5 connection"""
-    if not mt5.initialize():
-        logging.error(f"Failed to initialize MT5: {mt5.last_error()}")
-        return False
-        
-    account = int(os.getenv("MT5_LOGIN"))
+def initialize_mt5():
+    """Initialize MT5 with credentials from environment variables"""
+    max_retries = 3
+    retry_delay = 30  # seconds
+    
+    # Get credentials from environment variables
+    login = os.getenv("MT5_LOGIN")
     password = os.getenv("MT5_PASSWORD")
     server = os.getenv("MT5_SERVER")
     
-    if not mt5.login(account, password=password, server=server):
-        logging.error(f"Failed to login: {mt5.last_error()}")
+    # Validate credentials
+    if not all([login, password, server]):
+        logging.error("MT5 credentials not properly configured in .env file")
         return False
-        
-    return True
+    
+    # Convert login to integer as required by MT5
+    try:
+        login = int(login)
+    except ValueError:
+        logging.error("MT5_LOGIN must be a number")
+        return False
+    
+    for attempt in range(max_retries):
+        try:
+            # Initialize MT5
+            if not mt5.initialize():
+                raise Exception(f"Failed to initialize MT5: {mt5.last_error()}")
+            
+            # Attempt login
+            if not mt5.login(
+                login=login,
+                password=password,
+                server=server
+            ):
+                raise Exception(f"Failed to login: {mt5.last_error()}")
+            
+            logging.info("Successfully connected to MT5")
+            return True
+                
+        except Exception as e:
+            logging.error(f"MT5 initialization attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                logging.info(f"Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+                
+    return False
 
 def cleanup_cache():
     """Clean up cache files on program exit"""
@@ -55,37 +86,49 @@ def signal_handler(signum, frame):
     """Handle shutdown signals"""
     logging.info("Shutdown signal received. Cleaning up...")
     cleanup_cache()
+    mt5.shutdown()  # Added MT5 shutdown
     exit(0)
 
 def main():
     load_dotenv()
     setup_logging()
-    Path("cache").mkdir(exist_ok=True)
     
-    # Register cleanup handlers
-    atexit.register(cleanup_cache)
+    # Register signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
-    if not initialize_mt5():
-        return
-        
-    analyzer = MarketAnalyzer()
+    atexit.register(cleanup_cache)
     
     try:
-        while True:
+        Path("cache").mkdir(exist_ok=True, mode=0o755)
+    except Exception as e:
+        logging.error(f"Failed to create cache directory: {e}")
+        return
+
+    if not initialize_mt5():
+        return
+
+    try:
+        analyzer = MarketAnalyzer()
+    except ValueError as e:
+        logging.error(f"Failed to initialize analyzer: {e}")
+        mt5.shutdown()  # Added MT5 shutdown
+        return
+
+    while True:
+        try:
             analyzer.analyze_markets()
             logging.info("Analysis cycle completed. Waiting for 5 minutes...")
-            time.sleep(300)  # 5 minute interval
-            
-    except KeyboardInterrupt:
-        logging.info("Manual shutdown initiated. Cleaning up...")
-        # Cleanup will be handled by signal_handler
-        
-    except Exception as e:
-        logging.error(f"Error in main loop: {str(e)}")
-        logging.info("Retrying in 60 seconds...")
-        time.sleep(60)
+            time.sleep(300)
+        except KeyboardInterrupt:
+            logging.info("Manual shutdown initiated. Cleaning up...")
+            break
+        except Exception as e:
+            logging.error(f"Error in main loop: {str(e)}")
+            logging.info("Retrying in 60 seconds...")
+            time.sleep(60)
+            continue
+    
+    mt5.shutdown()  # Added MT5 shutdown
 
 if __name__ == "__main__":
     main()

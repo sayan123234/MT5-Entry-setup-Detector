@@ -7,6 +7,14 @@ timeframes:
     max_lookback: 50
   H4:
     max_lookback: 100
+  H1:
+    max_lookback: 200
+  M15:
+    max_lookback: 400
+  M5:
+    max_lookback: 600
+  M1:
+    max_lookback: 1000
 
 symbols:
   major_pairs:

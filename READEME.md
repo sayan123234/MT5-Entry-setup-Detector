@@ -1,187 +1,160 @@
-# FVG Detector
+FVG Detector
+A Python-based Fair Value Gap (FVG) detection system for MetaTrader 5. This project automatically scans multiple financial instruments across hierarchical timeframes to identify and alert about FVG formations with entry setups.
 
-A Python-based Fair Value Gap (FVG) detection system for MetaTrader 5. This project automatically scans multiple currency pairs across different timeframes to identify and alert about FVG formations.
+Features
+Multi-Timeframe Analysis (Monthly → Weekly → Daily → H4 → H1 → M15 → M5 → M1)
 
-## Features
+Smart Pattern Detection:
 
-- Hierarchical timeframe analysis (Monthly → Weekly → Daily → H4)
-- Detection of both confirmed and potential FVGs
-- Smart candle closure detection based on broker time
-- Dynamic symbol suffix handling for different brokers
-- 24-hour alert deduplication system
-- Support for multiple currency pairs, metals, and crypto
-- Real-time Telegram alerts with detailed status
-- Configurable settings via YAML
-- Comprehensive logging system
-- Automatic cache cleanup on program exit
+Confirmed FVGs (closed candles)
 
-## Project Structure
+Mitigation checks
 
-```
+Swing point identification
+
+Broker-Agnostic Implementation:
+
+Dynamic symbol suffix handling
+
+Server time synchronization
+
+Alert System:
+
+Entry alerts with HTF/LTF confluence
+
+24-hour deduplication
+
+Telegram integration
+
+Efficient Resource Management:
+
+LRU caching for rate data
+
+Automatic cache cleanup
+
+Memory optimization
+
+Robust Configuration:
+
+YAML-based settings
+
+Customizable lookback periods
+
+Multiple asset classes support
+
+Project Structure
+Copy
 fvg_detector/
 ├── config/
 │   └── config.yaml        # Configuration settings
-├── src/
-│   ├── __init__.py
-│   ├── main.py           # Entry point
-│   ├── config_handler.py  # Configuration management
-│   ├── market_analyzer.py # Market analysis logic
-│   ├── fvg_finder.py     # FVG detection logic
-│   ├── timeframe_utils.py # Timeframe handling
-│   ├── alert_cache_handler.py # Alert deduplication
-│   └── utils.py          # Utility functions
-├── logs/                 # Log files directory
-├── cache/               # Alert cache directory
-├── .env                # Environment variables
-└── requirements.txt    # Dependencies
-```
+├── alert_cache_handler.py # Alert deduplication
+├── config_handler.py      # Configuration management
+├── fvg_finder.py          # Core detection logic
+├── main.py                # Entry point
+├── market_analyzer.py     # Analysis orchestration
+├── requirements.txt       # Dependencies
+└── .env                   # Environment variables
+Key Improvements from Codebase
+Hierarchical Analysis:
 
-## Prerequisites
+python
+Copy
+# config_handler.py
+timeframe_hierarchy = {
+    TimeFrame.MONTHLY: [W1, D1, H4, H1, M15, M5, M1],
+    TimeFrame.WEEKLY: [D1, H4, H1, M15, M5, M1],
+    # ... full hierarchy down to M1
+}
+Smart Caching:
 
-- Python 3.8 or higher
-- MetaTrader 5 terminal installed
-- Active MT5 account
-- Telegram bot for alerts (optional)
-
-## Installation
-
-1. Clone the repository:
-```bash
-git clone [repository-url]
-cd fvg_detector
-```
-
-2. Install required packages:
-```bash
-pip install -r requirements.txt
-```
-
-3. Create a `.env` file in the root directory with your credentials:
-```
-MT5_LOGIN=your_account_number
-MT5_PASSWORD=your_password
-MT5_SERVER=your_server
-TELEGRAM_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
-```
-
-4. Configure your settings in `config/config.yaml`
-
-## Configuration
-
-### Symbol Configuration
-
-The system supports dynamic symbol suffixes for different brokers and various symbol categories:
-
-```yaml
-# Broker-specific symbol suffix
-# Examples:
-# - For suffix 'm': "EURUSDm" (e.g., "symbol_suffix: m")
-# - For suffix '.r': "EURUSD.r" (e.g., "symbol_suffix: .r")
-# - For no suffix: EURUSD (leave empty)
-symbol_suffix: "m"
-
-symbols:
-  major_pairs:
-    - "EURUSD"    # Will become EURUSDm with suffix
-    - "USDJPY"    # Will become USDJPYm with suffix
-    # ... more pairs
-  crosses:
-    - "EURGBP"
-    - "EURJPY"
-    # ... more crosses
-  metals:
-    - "XAUUSD"
-    - "XAGUSD"
-  crypto:
-    - "BTCUSD"
-    - "ETHUSD"
-```
-
-### Timeframe Settings
-
-Configure lookback periods for each timeframe:
-
-```yaml
+python
+Copy
+# alert_cache_handler.py
+self.cache_file = f"fvg_alerts_{datetime.now().strftime('%Y%m%d')}.json"
+self.manage_cache_size()  # Automatic 100MB limit
+Configuration Updates
+Expanded Timeframe Settings
+yaml
+Copy
 timeframes:
   MN1:
-    max_lookback: 12
+    max_lookback: 12    # Monthly
   W1:
-    max_lookback: 24
+    max_lookback: 24    # Weekly
   D1:
-    max_lookback: 50
+    max_lookback: 50    # Daily
   H4:
-    max_lookback: 100
-```
-
-### FVG Settings
-
-Configure FVG detection parameters:
-
-```yaml
+    max_lookback: 100   # 4-Hour
+  H1:
+    max_lookback: 200   # 1-Hour
+  M15:
+    max_lookback: 400   # 15-Minute
+  M5:
+    max_lookback: 600   # 5-Minute
+  M1:
+    max_lookback: 1000  # 1-Minute
+Enhanced Alert Configuration
+yaml
+Copy
 fvg_settings:
-  min_size: 0.0001  # Minimum FVG size
-```
+  min_size: 0.0001  # Minimum gap size (0.1 pip for FX)
 
-## Alert System
+telegram:
+  enabled: true      # Enable/disable alerts
+Alert Examples
+Entry Alert (HTF/LTF Confluence):
 
-The system features two types of alerts:
-1. Confirmed FVGs: All candles in the pattern have closed
-2. Potential FVGs: Pattern detected but some candles are still forming
+Copy
+🚨 ENTRY SETUP: EURUSDm
+📈 HTF: H4 bullish FVG (Mitigated)
+📉 LTF: M15 bullish FVG detected
+🔝 LTF Top: 1.12345
+⬇ LTF Bottom: 1.12222
+🕒 LTF Time: 2024-02-20 14:45:00
+Installation Updates
+Telegram Requirements:
 
-Alert features:
-- Detailed candle status information
-- 24-hour deduplication (no repeat alerts for same pattern)
-- Automatic cache cleanup at midnight and program exit
-- Separate tracking for potential and confirmed patterns
+bash
+Copy
+# requirements.txt
+python-telegram-bot==13.7
+Enhanced Environment:
 
-Sample alert message:
-```
-🔍 Confirmed FVG Detected on EURUSD
-⏱ Timeframe: D1
-📊 Type: bullish
-💹 Size: 0.00123
-🔝 Top: 1.12345
-⬇ Bottom: 1.12222
-🕒 Time: 2024-02-17 10:00:00
-```
+.env
+Copy
+TELEGRAM_TOKEN=your_bot_token       # Required for alerts
+TELEGRAM_CHAT_ID=your_chat_id       # Group/user ID
+MT5_LOGIN=your_account_number       # Must be numeric
+MT5_SERVER=your_broker_server       # e.g., 'ICMarkets-Demo'
+Operational Notes
+Analysis Workflow:
 
-## Time Synchronization
+Scans from highest to lowest timeframe
 
-The system ensures accurate candle closure detection by:
-- Using broker server time instead of local time
-- Proper handling of timeframe-specific closures
-- Accurate detection of forming vs closed candles
+Stops at first valid FVG with LTF confirmation
 
-## Cache Management
+Checks first 3 lower timeframes for confluence
 
-The system includes automatic cache management:
-- 24-hour alert deduplication
-- Automatic cleanup at midnight
-- Cache removal on program exit (Ctrl+C)
-- Separate caching for potential and confirmed alerts
+Performance Features:
 
-## Error Handling
+python
+Copy
+# fvg_finder.py
+@lru_cache(maxsize=100)  # Efficient rate data caching
+def get_cached_rates(self, symbol: str, timeframe: TimeFrame):
+Risk Management:
 
-Enhanced error handling for:
-- MT5 connection and data retrieval
-- Time synchronization issues
-- Alert deduplication and caching
-- Configuration validation
-- Symbol suffix validation
+Requires confirmed + mitigated FVG
 
-## Logging
+5-minute analysis intervals
 
-Comprehensive logging system with:
-- Daily log rotation
-- Detailed timeframe analysis logs
-- Alert and cache operation tracking
-- Error and warning notifications
+Automatic retry on failures
 
-## Contributing
+Backtesting Recommendation
+python
+Copy
+# market_analyzer.py
+# Uncomment to enable market hours check
+# def is_market_open(self, symbol: str) -> bool:
+Warning: Always test in demo account first. Historical FVG performance may vary significantly from real-time detection.
 
-Feel free to submit issues, fork the repository, and create pull requests for any improvements.
-
-## Disclaimer
-
-This software is for educational purposes only. Trading involves risk of loss. Make sure to understand the risks before using this system for live trading.
