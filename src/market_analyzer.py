@@ -118,7 +118,7 @@ class MarketAnalyzer:
     def _send_no_entry_alert(self, symbol, timeframe, fvg, checked_timeframes):
         """Send alert when no entry setups found"""
         message = (
-            f"⏳ No Entry Setup: {symbol}\n"
+            f"⏳ No Entry Setup, YETT!: {symbol}\n"
             f"📊 {timeframe} {fvg['type']} FVG was mitigated\n"
             f"🔍 No matching LTF FVGs found in:\n"
             f"{', '.join(str(tf.value) for tf in checked_timeframes)}"
