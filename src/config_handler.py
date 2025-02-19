@@ -36,9 +36,14 @@ class TimeFrame(Enum):
         return mapping[self.value]
 
 class ConfigHandler:
-    def __init__(self, config_file=Path("config") / "config.yaml"):
+    def __init__(self, config_file=None):
+        if config_file is None:
+            # Set the absolute path to the config file
+            base_dir = Path(__file__).resolve().parent.parent
+            self.config_file = base_dir / "config" / "config.yaml"
+        else:
+            self.config_file = Path(config_file)
         self.logger = logging.getLogger(__name__)
-        self.config_file = Path(config_file)
         self.config = {}
         self._load_config()
         if not self.validate_config(self.config):
