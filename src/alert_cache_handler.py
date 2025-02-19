@@ -5,19 +5,21 @@ import logging
 import os
 
 class AlertCache:
-    def __init__(self, cache_dir: str = "cache"):
+    def __init__(self, cache_dir: str = "cache", time_func=None):
         self.logger = logging.getLogger(__name__)
         self.cache_dir = Path(cache_dir)
+        self.time_func = time_func or datetime.now
+        
         try:
-            self.cache_dir.mkdir(exist_ok=True, mode=0o755)  # Add proper permissions
+            self.cache_dir.mkdir(exist_ok=True, mode=0o755)
         except Exception as e:
             self.logger.error(f"Failed to create cache directory: {e}")
             raise
 
-        self.cache_file = self.cache_dir / f"fvg_alerts_{datetime.now().strftime('%Y%m%d')}.json"
+        self.cache_file = self.cache_dir / f"fvg_alerts_{self.time_func().strftime('%Y%m%d')}.json"
         self.last_cleanup = None
         self.alerts = self._load_cache()
-        self.manage_cache_size()  # Add cache size management
+        self.manage_cache_size()
 
     def _load_cache(self) -> dict:
         """Load the cache file for the current day or create a new one"""
@@ -25,7 +27,6 @@ class AlertCache:
             if self.cache_file.exists():
                 with open(self.cache_file, 'r') as f:
                     data = json.load(f)
-                    # If the file is from a previous day, return empty dict
                     if self._is_cache_expired():
                         return {}
                     return data
@@ -51,36 +52,32 @@ class AlertCache:
             self.cache_file.stem.split('_')[-1], 
             '%Y%m%d'
         ).date()
-        current_date = datetime.now().date()
+        current_date = self.time_func().date()
         return file_date < current_date
 
-    def _generate_alert_key(self, symbol: str, timeframe: str, fvg_type: str) -> str:
-        """Generate a unique key for the alert"""
-        return f"{symbol}_{timeframe}_{fvg_type}"
+    def _generate_alert_key(self, symbol: str, timeframe: str, fvg_type: str, fvg_time: str) -> str:
+        """Generate a unique key for the alert using symbol, timeframe, type, and time"""
+        return f"{symbol}|{timeframe}|{fvg_type}|{fvg_time}"
 
-    def is_duplicate(self, symbol: str, timeframe: str, fvg_type: str) -> bool:
-        """Check if this alert combination has already been sent today"""
-        # Check if we need to cleanup first
+    def is_duplicate(self, symbol: str, timeframe: str, fvg_type: str, fvg_time: str) -> bool:
+        """Check if this exact FVG instance has already been alerted"""
         self.check_and_cleanup()
-        
-        alert_key = self._generate_alert_key(symbol, timeframe, fvg_type)
+        alert_key = self._generate_alert_key(symbol, timeframe, fvg_type, fvg_time)
         return alert_key in self.alerts
 
-    def add_alert(self, symbol: str, timeframe: str, fvg_type: str) -> None:
+    def add_alert(self, symbol: str, timeframe: str, fvg_type: str, fvg_time: str) -> None:
         """Add a new alert to the cache"""
-        alert_key = self._generate_alert_key(symbol, timeframe, fvg_type)
-        self.alerts[alert_key] = datetime.now().isoformat()
+        alert_key = self._generate_alert_key(symbol, timeframe, fvg_type, fvg_time)
+        self.alerts[alert_key] = self.time_func().isoformat()
         self._save_cache()
 
     def check_and_cleanup(self) -> None:
         """Check if cache needs cleanup and perform if necessary"""
-        current_time = datetime.now()
+        current_time = self.time_func()
         
-        # Initialize last_cleanup if it's None
         if self.last_cleanup is None:
             self.last_cleanup = current_time
             
-        # Check if it's a new day since last cleanup
         if current_time.date() > self.last_cleanup.date():
             self.logger.info("New day detected, cleaning up cache...")
             self._cleanup()
@@ -89,14 +86,10 @@ class AlertCache:
     def _cleanup(self) -> None:
         """Clean up the cache for the new day"""
         try:
-            # Clear current alerts
             self.alerts = {}
-            
-            # Update cache filename for the new day
-            self.cache_file = self.cache_dir / f"fvg_alerts_{datetime.now().strftime('%Y%m%d')}.json"
+            self.cache_file = self.cache_dir / f"fvg_alerts_{self.time_func().strftime('%Y%m%d')}.json"
             self._save_cache()
             
-            # Remove old cache files
             for cache_file in self.cache_dir.glob('fvg_alerts_*.json'):
                 if cache_file != self.cache_file:
                     try:
@@ -105,7 +98,6 @@ class AlertCache:
                         self.logger.error(f"Error removing old cache file {cache_file}: {e}")
                         
             self.logger.info("Cache cleanup completed successfully")
-            
         except Exception as e:
             self.logger.error(f"Error during cache cleanup: {e}")
             

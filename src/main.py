@@ -1,13 +1,14 @@
 import MetaTrader5 as mt5
 import logging
 from datetime import datetime
-from market_analyzer import MarketAnalyzer
 import time
 from pathlib import Path
 from dotenv import load_dotenv
 import os
 import atexit
 import signal
+from market_analyzer import MarketAnalyzer
+from time_sync import TimeSync
 
 def setup_logging():
     """Setup logging configuration"""
@@ -93,7 +94,6 @@ def main():
     load_dotenv()
     setup_logging()
     
-    # Register signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     atexit.register(cleanup_cache)
@@ -107,11 +107,15 @@ def main():
     if not initialize_mt5():
         return
 
+    # Initialize time synchronization
+    time_sync = TimeSync()
+    time_sync.calculate_time_offset()
+
     try:
-        analyzer = MarketAnalyzer()
+        analyzer = MarketAnalyzer(time_sync)
     except ValueError as e:
         logging.error(f"Failed to initialize analyzer: {e}")
-        mt5.shutdown()  # Added MT5 shutdown
+        mt5.shutdown()
         return
 
     while True:
@@ -128,7 +132,7 @@ def main():
             time.sleep(60)
             continue
     
-    mt5.shutdown()  # Added MT5 shutdown
+    mt5.shutdown()
 
 if __name__ == "__main__":
     main()

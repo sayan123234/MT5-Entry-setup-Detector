@@ -1,13 +1,13 @@
 import logging
 from typing import Dict
-import MetaTrader5 as mt5
 from config_handler import ConfigHandler, TimeFrame
 from fvg_finder import FVGFinder
 from utils import send_telegram_alert
 from alert_cache_handler import AlertCache
+from time_sync import TimeSync
 
 class MarketAnalyzer:
-    def __init__(self):
+    def __init__(self, time_sync: TimeSync = None):
         self.config = ConfigHandler()
         if not self.config.validate_timeframe_hierarchy():
             raise ValueError("Invalid timeframe hierarchy configuration")
@@ -16,21 +16,17 @@ class MarketAnalyzer:
 
         self.fvg_finder = FVGFinder()
         self.logger = logging.getLogger(__name__)
-        self.alert_cache = AlertCache()
+        self.time_sync = time_sync or TimeSync()
+        self.alert_cache = AlertCache(time_func=self.time_sync.get_current_broker_time)
         
-        # Use timeframe hierarchy from config
         self.timeframe_hierarchy = self.config.timeframe_hierarchy
         
     def cleanup_analysis_cycle(self):
         """Cleanup after each analysis cycle"""
         try:
-            # Clear MT5 rate cache
             self.fvg_finder.get_cached_rates.cache_clear()
-            
-            # Force garbage collection
             import gc
             gc.collect()
-            
         except Exception as e:
             self.logger.error(f"Cleanup error: {e}")
 
@@ -61,18 +57,15 @@ class MarketAnalyzer:
                 continue
 
     def _handle_complete_analysis(self, analysis: Dict):
-        """Handle completed analysis and send alerts if needed"""
         symbol = analysis['symbol']
         timeframe = analysis['timeframe']
         fvg = analysis['fvg']
         swing = analysis['swing']
 
-        # Skip non-confirmed or non-mitigated FVGs
         if not fvg.get('is_confirmed', False) or not fvg.get('mitigated', False):
             return
 
-        # Get lower timeframes to check
-        ltf_list = self.timeframe_hierarchy.get(TimeFrame(timeframe), [])[:3]  # Limit to first 3 LTFs
+        ltf_list = self.timeframe_hierarchy.get(TimeFrame(timeframe), [])[:3]
         entry_found = False
 
         for ltf in ltf_list:
@@ -80,7 +73,6 @@ class MarketAnalyzer:
                 should_continue, ltf_analysis = self.fvg_finder.analyze_timeframe(symbol, ltf)
                 
                 if ltf_analysis and ltf_analysis['fvg']['type'] == fvg['type']:
-                    # Found matching FVG in lower timeframe
                     self._send_entry_alert(symbol, timeframe, ltf, fvg, ltf_analysis['fvg'])
                     entry_found = True
                     break
@@ -89,16 +81,19 @@ class MarketAnalyzer:
                 self.logger.error(f"Error checking {ltf} for {symbol}: {e}")
                 continue
 
-        # Send no-entry alert if nothing found
         if not entry_found:
             self._send_no_entry_alert(symbol, timeframe, fvg, ltf_list)
 
     def _send_entry_alert(self, symbol, htf, ltf, htf_fvg, ltf_fvg):
-        """Send alert when entry setup is found"""
         alert_type = f"entry_{ltf_fvg['type']}"
+        fvg_time = ltf_fvg['time'].strftime('%Y%m%d%H%M')  # Minute precision
         
-        # Check for duplicate before sending
-        if self.alert_cache.is_duplicate(symbol, ltf, alert_type):
+        if self.alert_cache.is_duplicate(
+            symbol=symbol,
+            timeframe=ltf.value,
+            fvg_type=alert_type,
+            fvg_time=fvg_time
+        ):
             self.logger.info(f"Skipping duplicate alert for {symbol} {ltf} {alert_type}")
             return
             
@@ -113,10 +108,25 @@ class MarketAnalyzer:
         
         if self.config.telegram_config.get('enabled', False):
             send_telegram_alert(message)
-            self.alert_cache.add_alert(symbol, ltf, alert_type)  # Add to cache AFTER sending
+            self.alert_cache.add_alert(
+                symbol=symbol,
+                timeframe=ltf.value,
+                fvg_type=alert_type,
+                fvg_time=fvg_time
+            )
 
     def _send_no_entry_alert(self, symbol, timeframe, fvg, checked_timeframes):
-        """Send alert when no entry setups found"""
+        alert_type = f"no_entry_{fvg['type']}"
+        fvg_time = fvg['time'].strftime('%Y%m%d%H%M')
+        
+        if self.alert_cache.is_duplicate(
+            symbol=symbol,
+            timeframe=timeframe,
+            fvg_type=alert_type,
+            fvg_time=fvg_time
+        ):
+            return
+            
         message = (
             f"⏳ No Entry Setup, YETT!: {symbol}\n"
             f"📊 {timeframe} {fvg['type']} FVG was mitigated\n"
@@ -126,3 +136,9 @@ class MarketAnalyzer:
         
         if self.config.telegram_config.get('enabled', False):
             send_telegram_alert(message)
+            self.alert_cache.add_alert(
+                symbol=symbol,
+                timeframe=timeframe,
+                fvg_type=alert_type,
+                fvg_time=fvg_time
+            )
