@@ -89,9 +89,9 @@ class MarketAnalyzer:
                 self.logger.error(f"Error checking {ltf} for {symbol}: {e}")
                 continue
 
-        # # Send no-entry alert if nothing found
-        # if not entry_found:
-        #     self._send_no_entry_alert(symbol, timeframe, fvg, ltf_list)
+        # Send no-entry alert if nothing found
+        if not entry_found:
+            self._send_no_entry_alert(symbol, timeframe, fvg, ltf_list)
 
     def _send_entry_alert(self, symbol, htf, ltf, htf_fvg, ltf_fvg):
         """Send alert when entry setup is found"""
@@ -115,14 +115,14 @@ class MarketAnalyzer:
             send_telegram_alert(message)
             self.alert_cache.add_alert(symbol, ltf, alert_type)  # Add to cache AFTER sending
 
-    # def _send_no_entry_alert(self, symbol, timeframe, fvg, checked_timeframes):
-    #     """Send alert when no entry setups found"""
-    #     message = (
-    #         f"⏳ No Entry Setup: {symbol}\n"
-    #         f"📊 {timeframe} {fvg['type']} FVG was mitigated\n"
-    #         f"🔍 No matching LTF FVGs found in:\n"
-    #         f"{', '.join(str(tf.value) for tf in checked_timeframes)}"
-    #     )
+    def _send_no_entry_alert(self, symbol, timeframe, fvg, checked_timeframes):
+        """Send alert when no entry setups found"""
+        message = (
+            f"⏳ No Entry Setup: {symbol}\n"
+            f"📊 {timeframe} {fvg['type']} FVG was mitigated\n"
+            f"🔍 No matching LTF FVGs found in:\n"
+            f"{', '.join(str(tf.value) for tf in checked_timeframes)}"
+        )
         
-    #     if self.config.telegram_config.get('enabled', False):
-    #         send_telegram_alert(message)
+        if self.config.telegram_config.get('enabled', False):
+            send_telegram_alert(message)
