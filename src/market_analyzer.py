@@ -21,20 +21,6 @@ class MarketAnalyzer:
         # Use timeframe hierarchy from config
         self.timeframe_hierarchy = self.config.timeframe_hierarchy
         
-    # def is_market_open(self, symbol: str) -> bool:
-    #     try:
-    #         symbol_info = mt5.symbol_info(symbol)
-    #         if symbol_info is None:
-    #             return False
-                
-    #         current_time = mt5.symbol_info_tick(symbol).time
-    #         session_starts = symbol_info.session_deals_session_start
-    #         session_ends = symbol_info.session_deals_session_end
-            
-    #         return session_starts <= current_time <= session_ends
-    #     except:
-    #         return False
-        
     def cleanup_analysis_cycle(self):
         """Cleanup after each analysis cycle"""
         try:
@@ -48,7 +34,6 @@ class MarketAnalyzer:
         except Exception as e:
             self.logger.error(f"Cleanup error: {e}")
 
-    
     def analyze_markets(self):
         try:
             symbols = self.config.get_watchlist_symbols()
@@ -61,10 +46,6 @@ class MarketAnalyzer:
             self.cleanup_analysis_cycle()
 
     def analyze_symbol(self, symbol: str):
-        # if not self.is_market_open(symbol):
-        #     self.logger.info(f"Market closed for {symbol}, skipping analysis")
-        #     return
-            
         self.logger.info(f"Analyzing {symbol}")
 
         for timeframe in self.timeframe_hierarchy:
@@ -91,13 +72,11 @@ class MarketAnalyzer:
             return
 
         # Get lower timeframes to check
-        ltf_list = self.timeframe_hierarchy.get(TimeFrame(timeframe), [])
+        ltf_list = self.timeframe_hierarchy.get(TimeFrame(timeframe), [])[:3]  # Limit to first 3 LTFs
         entry_found = False
 
-        # Check only the first 3 lower timeframes
-        for ltf in ltf_list[:3]:  # <-- Add slice here
+        for ltf in ltf_list:
             try:
-                # Analyze lower timeframe
                 should_continue, ltf_analysis = self.fvg_finder.analyze_timeframe(symbol, ltf)
                 
                 if ltf_analysis and ltf_analysis['fvg']['type'] == fvg['type']:
@@ -112,7 +91,7 @@ class MarketAnalyzer:
 
         # # Send no-entry alert if nothing found
         # if not entry_found:
-        #     self._send_no_entry_alert(symbol, timeframe, fvg)
+        #     self._send_no_entry_alert(symbol, timeframe, fvg, ltf_list)
 
     def _send_entry_alert(self, symbol, htf, ltf, htf_fvg, ltf_fvg):
         """Send alert when entry setup is found"""
@@ -136,13 +115,13 @@ class MarketAnalyzer:
             send_telegram_alert(message)
             self.alert_cache.add_alert(symbol, ltf, alert_type)  # Add to cache AFTER sending
 
-    # def _send_no_entry_alert(self, symbol, timeframe, fvg):
+    # def _send_no_entry_alert(self, symbol, timeframe, fvg, checked_timeframes):
     #     """Send alert when no entry setups found"""
     #     message = (
     #         f"⏳ No Entry Setup: {symbol}\n"
     #         f"📊 {timeframe} {fvg['type']} FVG was mitigated\n"
     #         f"🔍 No matching LTF FVGs found in:\n"
-    #         f"{', '.join(str(tf.value) for tf in self.timeframe_hierarchy.get(TimeFrame(timeframe), []))}"
+    #         f"{', '.join(str(tf.value) for tf in checked_timeframes)}"
     #     )
         
     #     if self.config.telegram_config.get('enabled', False):

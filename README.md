@@ -153,12 +153,4 @@ def get_cached_rates(self, symbol: str, timeframe: TimeFrame):
 - 5-minute analysis intervals
 - Automatic retry on failures
 
-## Backtesting Recommendation
-
-```python
-# market_analyzer.py
-# Uncomment to enable market hours check
-# def is_market_open(self, symbol: str) -> bool:
-```
-
 ⚠ **Warning:** Always test in a demo account first. Historical FVG performance may vary significantly from real-time detection.
