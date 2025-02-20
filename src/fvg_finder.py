@@ -108,6 +108,133 @@ class FVGFinder:
         
         return None
 
+    def find_reentry_fvg(self, df: pd.DataFrame, original_fvg: Dict, timeframe: TimeFrame) -> Optional[Dict]:
+        """
+        Find FVG formation after price re-enters original FVG zone.
+        
+        Args:
+            df (pd.DataFrame): DataFrame with OHLC data
+            original_fvg (Dict): Original FVG that was mitigated
+            timeframe (TimeFrame): Timeframe being analyzed
+            
+        Returns:
+            Optional[Dict]: Reentry FVG if found, None otherwise
+        """
+        try:
+            # Validate input data
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                self.logger.error("Invalid or empty DataFrame provided")
+                return None
+                
+            if not isinstance(original_fvg, dict) or 'time' not in original_fvg:
+                self.logger.error("Invalid original FVG format")
+                return None
+                
+            # Convert time to datetime if it's not already
+            if isinstance(original_fvg['time'], str):
+                original_fvg['time'] = pd.to_datetime(original_fvg['time'])
+                
+            # Get data after original FVG
+            post_fvg_df = df[df['time'] > original_fvg['time']].copy()
+            if len(post_fvg_df) < 3:
+                return None
+            
+            fvg_top = original_fvg['top']
+            fvg_bottom = original_fvg['bottom']
+            min_size = self.config.fvg_settings['min_size']
+            
+            # Find where price re-enters FVG zone
+            reentry_found = False
+            reentry_idx = None
+            reentry_candle = None
+            
+            for idx in range(len(post_fvg_df) - 1):
+                candle = post_fvg_df.iloc[idx]
+                next_candle = post_fvg_df.iloc[idx + 1]
+                
+                if original_fvg['type'] == 'bullish':
+                    # For bullish FVG, check if price moves down into the zone
+                    if candle['low'] >= fvg_top and next_candle['low'] < fvg_top:
+                        reentry_found = True
+                        reentry_idx = idx + 1
+                        reentry_candle = next_candle
+                        break
+                else:  # bearish
+                    # For bearish FVG, check if price moves up into the zone
+                    if candle['high'] <= fvg_bottom and next_candle['high'] > fvg_bottom:
+                        reentry_found = True
+                        reentry_idx = idx + 1
+                        reentry_candle = next_candle
+                        break
+            
+            if not reentry_found:
+                return None
+                
+            # Look for new FVG after reentry, checking a reasonable number of candles
+            reentry_df = post_fvg_df.iloc[reentry_idx:reentry_idx + 20]  # Look at next 20 candles
+            
+            for i in range(len(reentry_df) - 3):
+                candle1 = reentry_df.iloc[i]
+                candle2 = reentry_df.iloc[i + 1]
+                candle3 = reentry_df.iloc[i + 2]
+                
+                candles_closed = [
+                    self.timeframe_utils.is_candle_closed(t, timeframe) 
+                    for t in [candle1['time'], candle2['time'], candle3['time']]
+                ]
+                
+                all_candles_closed = all(candles_closed)
+                
+                # Check for matching FVG type
+                if original_fvg['type'] == 'bullish':
+                    if candle3['low'] > candle1['high']:
+                        gap_size = candle3['low'] - candle1['high']
+                        
+                        # Additional validation for bullish reentry
+                        if (gap_size >= min_size and 
+                            candle2['high'] < candle3['low'] and  # Ensure middle candle doesn't fill gap
+                            candle1['time'] >= reentry_candle['time']):  # Ensure FVG forms after reentry
+                            
+                            return {
+                                "type": "bullish",
+                                "top": candle3['low'],
+                                "bottom": candle1['high'],
+                                "size": gap_size,
+                                "time": candle3['time'],
+                                "is_confirmed": all_candles_closed,
+                                "reentry": True,
+                                "original_fvg_time": original_fvg['time'],
+                                "reentry_time": reentry_candle['time'],
+                                "reentry_price": reentry_candle['low']
+                            }
+                else:  # bearish
+                    if candle3['high'] < candle1['low']:
+                        gap_size = candle1['low'] - candle3['high']
+                        
+                        # Additional validation for bearish reentry
+                        if (gap_size >= min_size and 
+                            candle2['low'] > candle3['high'] and  # Ensure middle candle doesn't fill gap
+                            candle1['time'] >= reentry_candle['time']):  # Ensure FVG forms after reentry
+                            
+                            return {
+                                "type": "bearish",
+                                "top": candle1['low'],
+                                "bottom": candle3['high'],
+                                "size": gap_size,
+                                "time": candle3['time'],
+                                "is_confirmed": all_candles_closed,
+                                "reentry": True,
+                                "original_fvg_time": original_fvg['time'],
+                                "reentry_time": reentry_candle['time'],
+                                "reentry_price": reentry_candle['high']
+                            }
+            
+            return None
+                
+        except Exception as e:
+            self.logger.error(f"Error finding reentry FVG: {e}")
+            return None
+
     def is_fvg_mitigated(self, df: pd.DataFrame, fvg: Dict) -> bool:
         """Check if price has entered the FVG zone"""
         fvg_top = fvg['top']
