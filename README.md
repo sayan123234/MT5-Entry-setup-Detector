@@ -1,45 +1,44 @@
-# MMT inspired Trading Entry Setup Detector
+# MMT-Inspired Trading Entry Setup Detector
 
-A Python-based entry alert system for MetaTrader 5 based on Arjoio's trading concepts. This project automatically scans multiple financial instruments across hierarchical timeframes to identify and alert about FVG formations with entry setups.
+A Python-based entry alert system for MetaTrader 5, inspired by Arjoio's trading concepts. This project automatically scans multiple financial instruments across hierarchical timeframes to identify and alert about FVG formations with entry setups.
 
-## Key Updates from Code Analysis
+## Features
 
-### Refined Timeframe Analysis
-- Actually limited to H1 and above timeframes in production
-- Hierarchy: MONTHLY → WEEKLY → DAILY → H4 → H1
-- Lower timeframes (M15, M5, M1) are filtered out in `market_analyzer.py`
+### Timeframe Analysis
+- Focuses on H1 and higher timeframes for robust signal detection.
+- Timeframe hierarchy: **MONTHLY → WEEKLY → DAILY → H4 → H1**.
+- Lower timeframes (M15, M5, M1) are filtered out for reliability.
 
-### Enhanced Pattern Detection
-- Reentry FVG detection for additional trading opportunities
-- Comprehensive candle closure validation
-- Detailed mitigation tracking
-- Three-candle pattern confirmation
+### Advanced Pattern Detection
+- Identifies standard and reentry FVGs for multiple trading opportunities.
+- Candle closure validation ensures accurate signals.
+- Tracks mitigation events to avoid false signals.
+- Three-candle pattern confirmation for stronger setups.
 
 ### Time Synchronization
-- New `TimeSync` class for broker time synchronization
-- Automatic time offset calculation
-- Fallback to direct server time queries
+- The new `TimeSync` class handles broker time synchronization.
+- Automatically calculates the broker time offset.
+- Falls back to direct server time queries when needed.
 
-### Advanced Alert System
-- Three types of alerts:
-  - Standard entry alerts
-  - Reentry setup alerts
-  - "Watch out" alerts for potential setups
-- Minute-precision deduplication
-- Rate-limited Telegram messaging
+### Alerting System
+- Three alert types:
+  - **Standard Entry Alerts** (ST)
+  - **Reentry Setup Alerts** (ST+RE)
+  - **Watch Alerts** for potential setups
+- Minute-precision deduplication prevents redundant alerts.
+- Telegram messaging with rate-limiting to avoid spam.
 
-### Resource Management
-- Daily cache file rotation
-- 100MB cache size limit with automatic cleanup
-- Garbage collection after analysis cycles
-- LRU caching for rate data
+### Resource & Performance Management
+- Daily cache file rotation with a 100MB size limit.
+- Automated garbage collection after each analysis cycle.
+- LRU caching for efficient rate data handling.
 
-### Error Handling
-- Retry mechanism for MT5 initialization (3 attempts, 30-second delay)
-- Graceful shutdown handling
-- Cross-platform timeout handling for operations
+### Robust Error Handling
+- Retry mechanism for MT5 initialization (3 attempts, 30-second delay).
+- Graceful shutdown procedures.
+- Cross-platform timeout handling.
 
-## Project Structure Updates
+## Project Structure
 
 ```
 fvg_detector/
@@ -57,9 +56,10 @@ fvg_detector/
 └── .env                 # Environment variables
 ```
 
-## Configuration Requirements
+## Configuration
 
 ### Environment Variables
+Create a `.env` file with the following details:
 ```ini
 MT5_LOGIN=your_account_number
 MT5_PASSWORD=your_account_password
@@ -69,9 +69,9 @@ TELEGRAM_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 ```
 
-### Updated Alert Examples
+## Alert Examples
 
-#### ST Entry Alert
+### Standard Entry Alert (ST)
 ```
 🚨 ST Setup: {symbol}
 📈 HTF: {timeframe} {type} FVG (Mitigated)
@@ -81,7 +81,7 @@ TELEGRAM_CHAT_ID=your_chat_id
 🕒 LTF Time: {time}
 ```
 
-#### ST+RE Setup Alert
+### Reentry Setup Alert (ST+RE)
 ```
 🎯 ST+RE Setup: {symbol}
 📈 HTF: {timeframe} {type} FVG (Mitigated)
@@ -92,33 +92,41 @@ TELEGRAM_CHAT_ID=your_chat_id
 📍 Original FVG Time: {original_time}
 ```
 
-#### Watch Alert
+### Watch Alert
 ```
 ⏳ Watch out for potential entry setups!: {symbol}
 📊 {timeframe} {type} FVG was mitigated
 🔍 No matching LTF FVGs found in: {timeframes}
 ```
 
-## Operational Features
+## Key Operational Features
 
 ### Performance Optimizations
-- Cached rate data with automatic invalidation
-- Smart timeframe filtering
-- Memory-efficient analysis cycles
+- Cached rate data with automatic invalidation.
+- Smart timeframe filtering for efficiency.
+- Memory-efficient analysis cycles.
 
 ### Risk Management
-- Confirmed candle validation
-- Mitigation checks before alerts
-- Rate limiting for alerts
-- Duplicate prevention
+- Candle validation to ensure confirmed setups.
+- Mitigation checks before sending alerts.
+- Rate-limited alerts to prevent spam.
+- Duplicate prevention using timestamp-based deduplication.
 
 ### Error Recovery
-- Automatic MT5 reconnection
-- Cache cleanup on shutdown
-- Graceful error handling
+- Automatic MT5 reconnection for stability.
+- Cache cleanup on shutdown to maintain performance.
+- Graceful error handling to prevent crashes.
 
-## Installation Requirements
+## Installation
 
+### Requirements
+
+Install dependencies using:
+```
+pip install -r requirements.txt
+```
+
+**Dependencies:**
 ```
 MetaTrader5==5.0.45
 pandas
@@ -127,11 +135,15 @@ python-dotenv
 requests
 ```
 
-⚠️ **Important Notes:**
-- System now focuses on H1 and higher timeframes for more reliable signals
-- Reentry detection provides additional trading opportunities
-- Time synchronization is critical for accurate candle closure detection
-- Alert deduplication uses minute-precision timestamps
-- Cache management is automated with size limits
+## Important Notes
+- The system prioritizes H1 and higher timeframes for accuracy.
+- Reentry detection allows for additional trading opportunities.
+- Time synchronization ensures correct candle closure validation.
+- Alerts are deduplicated with minute-level precision.
+- Cache management is automated with size limits.
 
-The system is designed for production use but should always be tested in a demo environment first.
+## Credits
+Inspired by Arjoio's trading methodology. Check out his YouTube channel for more insights: [Arjoio's YouTube Channel](https://www.youtube.com/@Arjoio)
+
+⚠️ **Always test in a demo environment before live trading!**
+
