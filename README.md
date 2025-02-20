@@ -1,6 +1,6 @@
-# FVG Detector
+# MMT inspired Trading Entry Setup Detector
 
-A Python-based Fair Value Gap (FVG) detection system for MetaTrader 5. This project automatically scans multiple financial instruments across hierarchical timeframes to identify and alert about FVG formations with entry setups.
+A Python-based entry alert system for MetaTrader 5 based on Arjoio's trading concepts. This project automatically scans multiple financial instruments across hierarchical timeframes to identify and alert about FVG formations with entry setups.
 
 ## Key Updates from Code Analysis
 
