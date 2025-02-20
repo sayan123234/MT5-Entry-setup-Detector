@@ -27,14 +27,15 @@ def initialize_mt5():
     max_retries = 3
     retry_delay = 30  # seconds
     
-    # Get credentials from environment variables
+    # Get credentials and path from environment variables
     login = os.getenv("MT5_LOGIN")
     password = os.getenv("MT5_PASSWORD")
     server = os.getenv("MT5_SERVER")
+    mt5_path = os.getenv("MT5_PATH")
     
-    # Validate credentials
-    if not all([login, password, server]):
-        logging.error("MT5 credentials not properly configured in .env file")
+    # Validate credentials and path
+    if not all([login, password, server, mt5_path]):
+        logging.error("MT5 credentials or path not properly configured in .env file")
         return False
     
     # Convert login to integer as required by MT5
@@ -46,8 +47,8 @@ def initialize_mt5():
     
     for attempt in range(max_retries):
         try:
-            # Initialize MT5
-            if not mt5.initialize():
+            # Initialize MT5 with the specified path
+            if not mt5.initialize(path=mt5_path):
                 raise Exception(f"Failed to initialize MT5: {mt5.last_error()}")
             
             # Attempt login

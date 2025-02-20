@@ -2,155 +2,136 @@
 
 A Python-based Fair Value Gap (FVG) detection system for MetaTrader 5. This project automatically scans multiple financial instruments across hierarchical timeframes to identify and alert about FVG formations with entry setups.
 
-## Features
+## Key Updates from Code Analysis
 
-### Multi-Timeframe Analysis
-- Monthly → Weekly → Daily → H4 → H1 → M15 → M5 → M1
+### Refined Timeframe Analysis
+- Actually limited to H1 and above timeframes in production
+- Hierarchy: MONTHLY → WEEKLY → DAILY → H4 → H1
+- Lower timeframes (M15, M5, M1) are filtered out in `market_analyzer.py`
 
-### Smart Pattern Detection
-- Confirmed FVGs (closed candles)
-- Mitigation checks
-- Swing point identification
+### Enhanced Pattern Detection
+- Reentry FVG detection for additional trading opportunities
+- Comprehensive candle closure validation
+- Detailed mitigation tracking
+- Three-candle pattern confirmation
 
-### Broker-Agnostic Implementation
-- Dynamic symbol suffix handling
-- Server time synchronization
+### Time Synchronization
+- New `TimeSync` class for broker time synchronization
+- Automatic time offset calculation
+- Fallback to direct server time queries
 
-### Alert System
-- Entry alerts with HTF/LTF confluence
-- 24-hour deduplication
-- Telegram integration
+### Advanced Alert System
+- Three types of alerts:
+  - Standard entry alerts
+  - Reentry setup alerts
+  - "Watch out" alerts for potential setups
+- Minute-precision deduplication
+- Rate-limited Telegram messaging
 
-### Efficient Resource Management
+### Resource Management
+- Daily cache file rotation
+- 100MB cache size limit with automatic cleanup
+- Garbage collection after analysis cycles
 - LRU caching for rate data
-- Automatic cache cleanup
-- Memory optimization
 
-### Robust Configuration
-- YAML-based settings
-- Customizable lookback periods
-- Multiple asset classes support
+### Error Handling
+- Retry mechanism for MT5 initialization (3 attempts, 30-second delay)
+- Graceful shutdown handling
+- Cross-platform timeout handling for operations
 
-## Project Structure
+## Project Structure Updates
 
 ```
- fvg_detector/
+fvg_detector/
 ├── config/
 │   └── config.yaml        # Configuration settings
 ├── alert_cache_handler.py # Alert deduplication
 ├── config_handler.py      # Configuration management
-├── fvg_finder.py          # Core detection logic
-├── main.py                # Entry point
-├── market_analyzer.py     # Analysis orchestration
-├── requirements.txt       # Dependencies
-└── .env                   # Environment variables
+├── fvg_finder.py         # Core detection logic
+├── main.py               # Entry point
+├── market_analyzer.py    # Analysis orchestration
+├── time_sync.py         # Broker time synchronization
+├── timeframe_utils.py    # Timeframe calculations
+├── utils.py             # Helper functions
+├── requirements.txt      # Dependencies
+└── .env                 # Environment variables
 ```
 
-## Key Improvements from Codebase
+## Configuration Requirements
 
-### Hierarchical Analysis
-
-```python
-# config_handler.py
-timeframe_hierarchy = {
-    TimeFrame.MONTHLY: [W1, D1, H4, H1, M15, M5, M1],
-    TimeFrame.WEEKLY: [D1, H4, H1, M15, M5, M1],
-    # ... full hierarchy down to M1
-}
-```
-
-### Smart Caching
-
-```python
-# alert_cache_handler.py
-self.cache_file = f"fvg_alerts_{datetime.now().strftime('%Y%m%d')}.json"
-self.manage_cache_size()  # Automatic 100MB limit
-```
-
-## Configuration Updates
-
-### Expanded Timeframe Settings
-
-```yaml
-timeframes:
-  MN1:
-    max_lookback: 12    # Monthly
-  W1:
-    max_lookback: 24    # Weekly
-  D1:
-    max_lookback: 50    # Daily
-  H4:
-    max_lookback: 100   # 4-Hour
-  H1:
-    max_lookback: 200   # 1-Hour
-  M15:
-    max_lookback: 400   # 15-Minute
-  M5:
-    max_lookback: 600   # 5-Minute
-  M1:
-    max_lookback: 1000  # 1-Minute
-```
-
-### Enhanced Alert Configuration
-
-```yaml
-fvg_settings:
-  min_size: 0.0001  # Minimum gap size (0.1 pip for FX)
-
-telegram:
-  enabled: true      # Enable/disable alerts
-```
-
-## Alert Examples
-
-### Entry Alert (HTF/LTF Confluence):
-
-```
-🚨 ENTRY SETUP: EURUSDm
-📈 HTF: H4 bullish FVG (Mitigated)
-📉 LTF: M15 bullish FVG detected
-🔝 LTF Top: 1.12345
-⬇ LTF Bottom: 1.12222
-🕒 LTF Time: 2024-02-20 14:45:00
-```
-
-## Installation Updates
-
-### Telegram Requirements:
-
-```bash
-# requirements.txt
-python-telegram-bot==13.7
-```
-
-### Enhanced Environment:
-
+### Environment Variables
 ```ini
-.env
-TELEGRAM_TOKEN=your_bot_token       # Required for alerts
-TELEGRAM_CHAT_ID=your_chat_id       # Group/user ID
-MT5_LOGIN=your_account_number       # Must be numeric
-MT5_SERVER=your_broker_server       # e.g., 'ICMarkets-Demo'
+MT5_LOGIN=your_account_number
+MT5_PASSWORD=your_account_password
+MT5_SERVER=your_broker_server
+MT5_PATH=path_to_mt5_terminal
+TELEGRAM_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_chat_id
 ```
 
-## Operational Notes
+### Updated Alert Examples
 
-### Analysis Workflow:
-- Scans from highest to lowest timeframe
-- Stops at first valid FVG with LTF confirmation
-- Checks first 3 lower timeframes for confluence
-
-### Performance Features:
-
-```python
-# fvg_finder.py
-@lru_cache(maxsize=100)  # Efficient rate data caching
-def get_cached_rates(self, symbol: str, timeframe: TimeFrame):
+#### ST Entry Alert
+```
+🚨 ST Setup: {symbol}
+📈 HTF: {timeframe} {type} FVG (Mitigated)
+📉 LTF: {ltf} {type} FVG detected
+🔝 LTF Top: {top}
+⬇ LTF Bottom: {bottom}
+🕒 LTF Time: {time}
 ```
 
-### Risk Management:
-- Requires confirmed + mitigated FVG
-- 5-minute analysis intervals
-- Automatic retry on failures
+#### ST+RE Setup Alert
+```
+🎯 ST+RE Setup: {symbol}
+📈 HTF: {timeframe} {type} FVG (Mitigated)
+📊 LTF: {ltf} Reentry FVG
+🔝 Top: {top}
+⬇ Bottom: {bottom}
+🕒 Time: {time}
+📍 Original FVG Time: {original_time}
+```
 
-⚠ **Warning:** Always test in a demo account first. Historical FVG performance may vary significantly from real-time detection.
+#### Watch Alert
+```
+⏳ Watch out for potential entry setups!: {symbol}
+📊 {timeframe} {type} FVG was mitigated
+🔍 No matching LTF FVGs found in: {timeframes}
+```
+
+## Operational Features
+
+### Performance Optimizations
+- Cached rate data with automatic invalidation
+- Smart timeframe filtering
+- Memory-efficient analysis cycles
+
+### Risk Management
+- Confirmed candle validation
+- Mitigation checks before alerts
+- Rate limiting for alerts
+- Duplicate prevention
+
+### Error Recovery
+- Automatic MT5 reconnection
+- Cache cleanup on shutdown
+- Graceful error handling
+
+## Installation Requirements
+
+```
+MetaTrader5==5.0.45
+pandas
+pyyaml
+python-dotenv
+requests
+```
+
+⚠️ **Important Notes:**
+- System now focuses on H1 and higher timeframes for more reliable signals
+- Reentry detection provides additional trading opportunities
+- Time synchronization is critical for accurate candle closure detection
+- Alert deduplication uses minute-precision timestamps
+- Cache management is automated with size limits
+
+The system is designed for production use but should always be tested in a demo environment first.
