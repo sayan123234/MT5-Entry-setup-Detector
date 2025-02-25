@@ -11,6 +11,15 @@ class FVGFinder:
         self.config = ConfigHandler()
         self.logger = logging.getLogger(__name__)
         self.timeframe_utils = TimeframeUtils()
+        self.fvg_min_sizes = self.config.fvg_settings.get('min_size', {'default': 0.0001})
+
+    def _get_min_size(self, symbol: str) -> float:
+        """Get minimum FVG size based on symbol type"""
+        if 'XAU' in symbol or 'XAG' in symbol:
+            return self.fvg_min_sizes.get('metals', self.fvg_min_sizes['default'])
+        elif any(crypto in symbol for crypto in ['BTC', 'ETH']):
+            return self.fvg_min_sizes.get('crypto', self.fvg_min_sizes['default'])
+        return self.fvg_min_sizes['default']
 
     def find_swing(self, df: pd.DataFrame) -> Optional[Dict]:
         """Find the first swing point scanning backwards from current candle."""
@@ -54,9 +63,9 @@ class FVGFinder:
         
         return None
 
-    def find_fvg_before_swing(self, df: pd.DataFrame, swing_index: int, timeframe: TimeFrame) -> Optional[Dict]:
+    def find_fvg_before_swing(self, df: pd.DataFrame, swing_index: int, timeframe: TimeFrame, symbol: str) -> Optional[Dict]:
         """Find both confirmed and potential FVGs between current candle and swing point"""
-        min_size = self.config.fvg_settings['min_size']
+        min_size = self._get_min_size(symbol)
         
         for i in range(len(df) - 3, swing_index, -1):
             candle1_time = df.iloc[i]['time']
@@ -108,20 +117,11 @@ class FVGFinder:
         
         return None
 
-    def find_reentry_fvg(self, df: pd.DataFrame, original_fvg: Dict, timeframe: TimeFrame) -> Optional[Dict]:
+    def find_reentry_fvg(self, df: pd.DataFrame, original_fvg: Dict, timeframe: TimeFrame, symbol: str) -> Optional[Dict]:
         """
         Find FVG formation after price re-enters original FVG zone.
-        
-        Args:
-            df (pd.DataFrame): DataFrame with OHLC data
-            original_fvg (Dict): Original FVG that was mitigated
-            timeframe (TimeFrame): Timeframe being analyzed
-            
-        Returns:
-            Optional[Dict]: Reentry FVG if found, None otherwise
         """
         try:
-            # Validate input data
             if not isinstance(df, pd.DataFrame) or df.empty:
                 self.logger.error("Invalid or empty DataFrame provided")
                 return None
@@ -130,20 +130,17 @@ class FVGFinder:
                 self.logger.error("Invalid original FVG format")
                 return None
                 
-            # Convert time to datetime if it's not already
             if isinstance(original_fvg['time'], str):
                 original_fvg['time'] = pd.to_datetime(original_fvg['time'])
                 
-            # Get data after original FVG
             post_fvg_df = df[df['time'] > original_fvg['time']].copy()
             if len(post_fvg_df) < 3:
                 return None
             
             fvg_top = original_fvg['top']
             fvg_bottom = original_fvg['bottom']
-            min_size = self.config.fvg_settings['min_size']
+            min_size = self._get_min_size(symbol)
             
-            # Find where price re-enters FVG zone
             reentry_found = False
             reentry_idx = None
             reentry_candle = None
@@ -153,14 +150,12 @@ class FVGFinder:
                 next_candle = post_fvg_df.iloc[idx + 1]
                 
                 if original_fvg['type'] == 'bullish':
-                    # For bullish FVG, check if price moves down into the zone
                     if candle['low'] >= fvg_top and next_candle['low'] < fvg_top:
                         reentry_found = True
                         reentry_idx = idx + 1
                         reentry_candle = next_candle
                         break
                 else:  # bearish
-                    # For bearish FVG, check if price moves up into the zone
                     if candle['high'] <= fvg_bottom and next_candle['high'] > fvg_bottom:
                         reentry_found = True
                         reentry_idx = idx + 1
@@ -170,8 +165,7 @@ class FVGFinder:
             if not reentry_found:
                 return None
                 
-            # Look for new FVG after reentry, checking a reasonable number of candles
-            reentry_df = post_fvg_df.iloc[reentry_idx:reentry_idx + 20]  # Look at next 20 candles
+            reentry_df = post_fvg_df.iloc[reentry_idx:reentry_idx + 20]
             
             for i in range(len(reentry_df) - 3):
                 candle1 = reentry_df.iloc[i]
@@ -185,16 +179,12 @@ class FVGFinder:
                 
                 all_candles_closed = all(candles_closed)
                 
-                # Check for matching FVG type
                 if original_fvg['type'] == 'bullish':
                     if candle3['low'] > candle1['high']:
                         gap_size = candle3['low'] - candle1['high']
-                        
-                        # Additional validation for bullish reentry
                         if (gap_size >= min_size and 
-                            candle2['high'] < candle3['low'] and  # Ensure middle candle doesn't fill gap
-                            candle1['time'] >= reentry_candle['time']):  # Ensure FVG forms after reentry
-                            
+                            candle2['high'] < candle3['low'] and
+                            candle1['time'] >= reentry_candle['time']):
                             return {
                                 "type": "bullish",
                                 "top": candle3['low'],
@@ -210,12 +200,9 @@ class FVGFinder:
                 else:  # bearish
                     if candle3['high'] < candle1['low']:
                         gap_size = candle1['low'] - candle3['high']
-                        
-                        # Additional validation for bearish reentry
                         if (gap_size >= min_size and 
-                            candle2['low'] > candle3['high'] and  # Ensure middle candle doesn't fill gap
-                            candle1['time'] >= reentry_candle['time']):  # Ensure FVG forms after reentry
-                            
+                            candle2['low'] > candle3['high'] and
+                            candle1['time'] >= reentry_candle['time']):
                             return {
                                 "type": "bearish",
                                 "top": candle1['low'],
@@ -240,14 +227,11 @@ class FVGFinder:
         fvg_top = fvg['top']
         fvg_bottom = fvg['bottom']
         
-        # Get candles after FVG formation
         post_fvg_df = df[df['time'] > fvg['time']]
         
         if fvg['type'] == 'bullish':
-            # Check if price dipped into bullish FVG
             return (post_fvg_df['low'] < fvg_top).any()
         elif fvg['type'] == 'bearish':
-            # Check if price rallied into bearish FVG
             return (post_fvg_df['high'] > fvg_bottom).any()
         return False
     
@@ -264,10 +248,11 @@ class FVGFinder:
                 return None
                 
             df = pd.DataFrame(rates)
-            if len(df) < count * 0.8:  # Check if we got enough data
+            if len(df) < count * 0.8:
                 self.logger.warning(f"Insufficient data for {symbol} {timeframe}")
                 return None
                 
+            df.name = symbol  # Store symbol in DataFrame for later use
             return df
         except Exception as e:
             self.logger.error(f"Error getting rates: {e}")
@@ -276,7 +261,7 @@ class FVGFinder:
     def analyze_timeframe(self, symbol: str, timeframe: TimeFrame):
         """Analyze a single timeframe for FVG or swing point."""
         try:
-            max_lookback = self.config.get_timeframes().get(timeframe, 100)  # Default to 100 if missing
+            max_lookback = self.config.get_timeframes().get(timeframe, 100)
             df = self.get_rates_safe(symbol, timeframe, max_lookback)
 
             if df is None:
@@ -288,9 +273,8 @@ class FVGFinder:
             if swing is None:
                 return True, None
 
-            fvg = self.find_fvg_before_swing(df, swing['index'], timeframe)
+            fvg = self.find_fvg_before_swing(df, swing['index'], timeframe, symbol)
             if fvg:
-                # Add mitigation check for confirmed FVGs
                 if fvg['is_confirmed']:
                     fvg['mitigated'] = self.is_fvg_mitigated(df, fvg)
                 

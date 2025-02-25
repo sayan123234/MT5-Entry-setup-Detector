@@ -21,36 +21,51 @@ timeframes:
 # - For suffix 'm': "EURUSDm"
 # - For suffix '.r': "EURUSD.r"
 # - For no suffix: leave empty
-symbol_suffix: "m"
+symbol_suffix:
 
 symbols:
   major_pairs:
-    - "EURUSD"
-    - "USDJPY"
-    - "GBPUSD"
+    - "EURUSD.sml"
+    - "USDJPY.sml"
+    - "GBPUSD.sml"
     - "USDCHF"
     - "USDCAD"
-    - "AUDUSD"
+    - "AUDUSD.sml"
     - "NZDUSD"
   crosses:
-    - "EURGBP"
-    - "EURJPY"
-    - "EURCHF"
+    - "AUDCAD"
+    - "AUDCHF"
+    - "AUDJPY"
+    - "AUDNZD"
+    - "CADCHF"
+    - "CADJPY"
+    - "CHFJPY"
     - "EURAUD"
     - "EURCAD"
-    - "GBPJPY"
-    - "GBPCHF"
+    - "EURCHF"
+    - "EURGBP.sml"
+    - "EURJPY"
+    - "EURNZD"
     - "GBPAUD"
     - "GBPCAD"
+    - "GBPCHF"
+    - "GBPJPY.sml"
+    - "GBPNZD"
+    - "NZDCAD"
+    - "NZDCHF"
+    - "NZDJPY"
   metals:
-    - "XAUUSD"
+    - "XAUUSD.sml"
     - "XAGUSD"
   crypto:
     - "BTCUSD"
     - "ETHUSD"
 
 fvg_settings:
-  min_size: 0.0001
+  min_size:
+    default: 0.0001
+    metals: 0.1
+    crypto: 10.0
 
 telegram:
   enabled: true

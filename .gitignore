@@ -24,9 +24,11 @@ wheels/
 venv/
 env/
 ENV/
-.env
-.venv
+.venv/
 pythonenv*
+
+# Environment Variables
+.env
 
 # IDE - VSCode
 .vscode/
@@ -40,13 +42,15 @@ pythonenv*
 .idea_modules/
 
 # IDE - Jupyter Notebook
-.ipynb_checkpoints
+.ipynb_checkpoints/
 *.ipynb
 
-# Project specific
-logs/
+# Project Specific
+/logs/
+/cache/
 *.log
 signals_cache.json
+fvg_alerts_*.json  # Alert cache files from AlertCache
 
 # Operating System
 .DS_Store
@@ -55,15 +59,16 @@ Thumbs.db
 .*.swp
 *~
 
-# MetaTrader specific
+# MetaTrader Specific
 *.ex4
 *.ex5
 *.mq4
 *.mq5
 *.mqh
 *.dat
+mt5_symbols.csv
 
-# Test coverage
+# Test Coverage
 htmlcov/
 .tox/
 .coverage

@@ -16,9 +16,7 @@ class TimeFrame(Enum):
     M1 = "M1"
     
     def __lt__(self, other):
-        # Order from highest to lowest timeframe
         order = ["MN1", "W1", "D1", "H4", "H1", "M15", "M5", "M1"]
-        # Higher timeframe should be less than lower timeframe in index
         return order.index(self.value) > order.index(other.value)
 
     @property
@@ -38,7 +36,6 @@ class TimeFrame(Enum):
 class ConfigHandler:
     def __init__(self, config_file=None):
         if config_file is None:
-            # Set the absolute path to the config file
             base_dir = Path(__file__).resolve().parent.parent
             self.config_file = base_dir / "config" / "config.yaml"
         else:
@@ -75,34 +72,22 @@ class ConfigHandler:
         """Setup the hierarchy of timeframes"""
         timeframes = list(TimeFrame)
         hierarchy = {}
-        
         for i, tf in enumerate(timeframes):
-            # For each timeframe, add all lower timeframes as potential entry timeframes
             hierarchy[tf] = timeframes[i+1:]
-            
         return hierarchy
 
     def validate_timeframe_hierarchy(self) -> bool:
         """Validate that the timeframe hierarchy is properly configured"""
         try:
-            # Get all configured timeframes
             configured_timeframes = set(TimeFrame(tf) for tf in self.config.get('timeframes', {}))
-            
-            # Validate each hierarchical relationship
             for htf, ltf_list in self.timeframe_hierarchy.items():
-                # Skip validation if higher timeframe isn't configured
                 if htf not in configured_timeframes:
                     continue
-                    
-                # Only validate relationships for configured lower timeframes
                 for ltf in ltf_list:
-                    if ltf in configured_timeframes:
-                        if not htf > ltf:
-                            self.logger.error(f"Invalid timeframe relationship: {htf.value} should be higher than {ltf.value}")
-                            return False
-                            
+                    if ltf in configured_timeframes and not htf > ltf:
+                        self.logger.error(f"Invalid timeframe relationship: {htf.value} should be higher than {ltf.value}")
+                        return False
             return True
-            
         except Exception as e:
             self.logger.error(f"Error validating timeframe hierarchy: {e}")
             return False
@@ -123,17 +108,29 @@ class ConfigHandler:
             self.logger.error("Missing required configuration fields")
             return False
             
-        if not isinstance(config.get('fvg_settings', {}).get('min_size'), (int, float)):
-            self.logger.error("Invalid FVG min_size configuration")
+        # Updated validation for nested min_size
+        fvg_settings = config.get('fvg_settings', {})
+        min_size = fvg_settings.get('min_size')
+        if isinstance(min_size, dict):
+            # Check that 'default' exists and is a number
+            if 'default' not in min_size or not isinstance(min_size['default'], (int, float)):
+                self.logger.error("Invalid FVG min_size configuration: 'default' must be a number")
+                return False
+            # Optionally validate other keys
+            for key, value in min_size.items():
+                if not isinstance(value, (int, float)):
+                    self.logger.error(f"Invalid FVG min_size value for {key}: must be a number")
+                    return False
+        elif not isinstance(min_size, (int, float)):
+            self.logger.error("Invalid FVG min_size configuration: must be a number or dict with 'default'")
             return False
-            
+
         return True
 
     def _get_symbol_suffix(self) -> str:
         """Get the symbol suffix from config or return empty string if not set"""
         suffix = self.config.get("symbol_suffix", "")
         if suffix:
-            # If suffix starts with '.', keep it as is, otherwise add it to the symbol directly
             if suffix.startswith('.'):
                 return suffix
             return f"{suffix}"
@@ -149,7 +146,6 @@ class ConfigHandler:
         """Get list of symbols with proper suffix applied"""
         symbols = []
         for category in self.config.get("symbols", {}).values():
-            # Apply suffix to each symbol
             symbols.extend(self._apply_suffix(symbol) for symbol in category)
         return symbols
 

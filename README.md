@@ -55,6 +55,14 @@ fvg_detector/
 ├── requirements.txt      # Dependencies
 └── .env                 # Environment variables
 ```
+## Symbol Verification  
+
+Before running the detector, ensure that your broker’s symbols match the ones defined in `config.yaml`. Brokers may use different symbol naming conventions, which can cause mismatches.  
+
+To fetch and save all available MT5 symbols, run:  
+
+```sh
+python check_and_save_symbols.py
 
 ## Configuration
 
