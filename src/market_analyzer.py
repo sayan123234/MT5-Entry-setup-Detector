@@ -91,8 +91,10 @@ class MarketAnalyzer:
             try:
                 should_continue, ltf_analysis = self.fvg_finder.analyze_timeframe(symbol, ltf)
                 if ltf_analysis and ltf_analysis['fvg']['type'] == fvg['type']:
-                    self._send_entry_alert(symbol, timeframe, ltf, fvg, ltf_analysis['fvg'])
-                    entry_found = True
+                    # Add this check to ensure LTF FVG is confirmed
+                    if ltf_analysis['fvg'].get('is_confirmed', False):
+                        self._send_entry_alert(symbol, timeframe, ltf, fvg, ltf_analysis['fvg'])
+                        entry_found = True
             except Exception as e:
                 self.logger.error(f"Error checking {ltf} for {symbol}: {e}")
                 continue
@@ -102,13 +104,15 @@ class MarketAnalyzer:
         try:
             should_continue, ltf_analysis = self.fvg_finder.analyze_timeframe(symbol, lowest_tf)
             if ltf_analysis and ltf_analysis['fvg']['type'] == fvg['type']:
-                rates_df = pd.DataFrame(self.fvg_finder.get_cached_rates(symbol, lowest_tf))
-                rates_df['time'] = pd.to_datetime(rates_df['time'], unit='s')
-                reentry_fvg = self.fvg_finder.find_reentry_fvg(rates_df, ltf_analysis['fvg'], lowest_tf, symbol)
-                if reentry_fvg:
-                    self._send_reentry_alert(symbol, timeframe, lowest_tf, fvg, reentry_fvg)
-                    entry_found = True
-                # Removed the else clause that would send a regular entry alert if no reentry FVG was found
+                # Add this check for the lowest timeframe as well
+                if ltf_analysis['fvg'].get('is_confirmed', False):
+                    rates_df = pd.DataFrame(self.fvg_finder.get_cached_rates(symbol, lowest_tf))
+                    rates_df['time'] = pd.to_datetime(rates_df['time'], unit='s')
+                    reentry_fvg = self.fvg_finder.find_reentry_fvg(rates_df, ltf_analysis['fvg'], lowest_tf, symbol)
+                    if reentry_fvg and reentry_fvg.get('is_confirmed', False):  # Ensure reentry FVG is confirmed too
+                        self._send_reentry_alert(symbol, timeframe, lowest_tf, fvg, reentry_fvg)
+                        entry_found = True
+                    # Removed the else clause that would send a regular entry alert if no reentry FVG was found
         except Exception as e:
             self.logger.error(f"Error checking reentry for {symbol} on {lowest_tf}: {e}")
 
