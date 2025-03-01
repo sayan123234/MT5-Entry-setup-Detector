@@ -3,7 +3,8 @@ import os
 import logging
 from functools import lru_cache
 import time
-import threading  # Replaced signal with threading for Windows compatibility
+import threading
+from datetime import datetime
 
 def mt5_operation_with_timeout(operation_name: str, timeout: int = 30):
     """
@@ -30,7 +31,7 @@ def mt5_operation_with_timeout(operation_name: str, timeout: int = 30):
 @mt5_operation_with_timeout("telegram_alert")
 def send_telegram_alert(message: str, rate_limit: int = 60) -> bool:
     """
-    Send alert to Telegram with rate limiting
+    Send alert to Telegram with rate limiting, only from Monday to Friday.
     
     Args:
         message: The message to send
@@ -39,6 +40,13 @@ def send_telegram_alert(message: str, rate_limit: int = 60) -> bool:
     Returns:
         bool: True if message was sent successfully, False otherwise
     """
+    
+    # Check if it's a weekday (Monday to Friday)
+    now = datetime.now()
+    if now.weekday() >= 5:  # Saturday (5) or Sunday (6)
+        logging.info("Alert suppressed: Weekend trading is disabled.")
+        return False
+    
     # Create a simple in-memory cache if not exists
     if not hasattr(send_telegram_alert, '_cache'):
         send_telegram_alert._cache = {}
