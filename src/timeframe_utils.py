@@ -69,7 +69,7 @@ class TimeframeUtils:
 
     def is_candle_closed(self, candle_time: pd.Timestamp, timeframe: TimeFrame) -> bool:
         try:
-            symbol = self.get_reference_symbol()  # Use new method instead of hardcoded EURUSDm
+            symbol = self.get_reference_symbol()
             current_tick = mt5.symbol_info_tick(symbol)
             if current_tick is None:
                 self.logger.error("Failed to get server time from MT5")

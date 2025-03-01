@@ -99,20 +99,24 @@ class MarketAnalyzer:
                 self.logger.error(f"Error checking {ltf} for {symbol}: {e}")
                 continue
 
-        # Handle the lowest timeframe separately - ONLY send alert if reentry FVG is found
+        # Handle the lowest timeframe with improved reentry detection
         lowest_tf = ltf_list[-1]
         try:
             should_continue, ltf_analysis = self.fvg_finder.analyze_timeframe(symbol, lowest_tf)
             if ltf_analysis and ltf_analysis['fvg']['type'] == fvg['type']:
-                # Add this check for the lowest timeframe as well
                 if ltf_analysis['fvg'].get('is_confirmed', False):
                     rates_df = pd.DataFrame(self.fvg_finder.get_cached_rates(symbol, lowest_tf))
                     rates_df['time'] = pd.to_datetime(rates_df['time'], unit='s')
-                    reentry_fvg = self.fvg_finder.find_reentry_fvg(rates_df, ltf_analysis['fvg'], lowest_tf, symbol)
-                    if reentry_fvg and reentry_fvg.get('is_confirmed', False):  # Ensure reentry FVG is confirmed too
-                        self._send_reentry_alert(symbol, timeframe, lowest_tf, fvg, reentry_fvg)
-                        entry_found = True
-                    # Removed the else clause that would send a regular entry alert if no reentry FVG was found
+                    
+                    # First check if the original FVG is mitigated
+                    if self.fvg_finder.is_fvg_mitigated(rates_df, ltf_analysis['fvg']):
+                        # Then look for reentry FVG
+                        reentry_fvg = self.fvg_finder.find_reentry_fvg(rates_df, ltf_analysis['fvg'], lowest_tf, symbol)
+                        
+                        if reentry_fvg and reentry_fvg.get('is_confirmed', False):
+                            # Send a single type of reentry alert that includes chain depth information
+                            self._send_reentry_alert(symbol, timeframe, lowest_tf, fvg, reentry_fvg)
+                            entry_found = True
         except Exception as e:
             self.logger.error(f"Error checking reentry for {symbol} on {lowest_tf}: {e}")
 
@@ -156,8 +160,13 @@ class MarketAnalyzer:
             self.alert_cache.add_alert(symbol=symbol, timeframe=ltf.value, fvg_type=alert_type, fvg_time=fvg_time)
 
     def _send_reentry_alert(self, symbol, htf, ltf, htf_fvg, reentry_fvg):
-        """Send alert for reentry setup with enhanced content"""
+        """Send alert for reentry setup with enhanced content for all chain depths"""
+        # Determine alert type based on chain depth
+        chain_depth = reentry_fvg.get('chain_depth', 0)
         alert_type = f"reentry_{reentry_fvg['type']}"
+        if chain_depth > 1:
+            alert_type = f"reentry_chain_{reentry_fvg['type']}"
+        
         fvg_time = reentry_fvg['time'].strftime('%Y%m%d%H%M')
         
         if self.alert_cache.is_duplicate(symbol=symbol, timeframe=ltf.value, fvg_type=alert_type, fvg_time=fvg_time):
@@ -175,8 +184,29 @@ class MarketAnalyzer:
         distance_to_top = (reentry_fvg['top'] - current_price) / pip_size if current_price < reentry_fvg['top'] else 0
         distance_to_bottom = (current_price - reentry_fvg['bottom']) / pip_size if current_price > reentry_fvg['bottom'] else 0
 
+        # Calculate time since original FVG and mitigation
+        original_time = reentry_fvg.get('original_fvg_time')
+        mitigation_time = reentry_fvg.get('mitigation_time')
+        
+        time_info = ""
+        if original_time and isinstance(original_time, pd.Timestamp):
+            elapsed_time = (reentry_fvg['time'] - original_time).total_seconds() / 60  # in minutes
+            time_info += f"\n⏱ Time since original: {int(elapsed_time)} mins"
+        
+        if mitigation_time and isinstance(mitigation_time, pd.Timestamp):
+            mins_since_mitigation = (reentry_fvg['time'] - mitigation_time).total_seconds() / 60
+            time_info += f"\n⏱ Formed {int(mins_since_mitigation)} mins after mitigation"
+
+        # Customize emoji and title based on chain depth
+        if chain_depth > 1:
+            setup_emoji = "🔄"
+            setup_title = f"Chain-RE Setup (Depth: {chain_depth})"
+        else:
+            setup_emoji = "🎯"
+            setup_title = "ST+RE Setup"
+
         message = (
-            f"🎯 ST+RE Setup: {symbol}\n"
+            f"{setup_emoji} {setup_title}: {symbol}\n"
             f"📈 HTF: {htf} {htf_fvg['type']} FVG (Mitigated)\n"
             f"📊 LTF: {ltf} Reentry FVG\n"
             f"🔝 Top: {reentry_fvg['top']:.5f}\n"
@@ -184,14 +214,19 @@ class MarketAnalyzer:
             f"📏 FVG Size: {fvg_size_pips:.1f} pips\n"
             f"📍 Distance to Top: {distance_to_top:.1f} pips\n"
             f"📍 Distance to Bottom: {distance_to_bottom:.1f} pips\n"
-            f"🕒 Time: {reentry_fvg['time']}\n"
-            f"📍 Original FVG Time: {reentry_fvg['original_fvg_time']}"
+            f"🕒 Time: {reentry_fvg['time']}{time_info}"
         )
+        
+        # Add original FVG time and mitigation time if available
+        if original_time:
+            message += f"\n📍 Original FVG Time: {original_time}"
+        if mitigation_time:
+            message += f"\n📍 Mitigation Time: {mitigation_time}"
         
         if self.config.telegram_config.get('enabled', False):
             send_telegram_alert(message)
             self.alert_cache.add_alert(symbol=symbol, timeframe=ltf.value, fvg_type=alert_type, fvg_time=fvg_time)
-
+            
     def _send_no_entry_alert(self, symbol, timeframe, fvg, checked_timeframes):
         """Send alert when no entry setups are found with enhanced content"""
         alert_type = f"no_entry_{fvg['type']}"

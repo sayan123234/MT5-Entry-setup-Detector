@@ -17,8 +17,8 @@ class TimeSync:
                 self.symbol = symbol
                 break
         if not self.symbol:
-            self.symbol = "EURUSD"  # Fallback
-            self.logger.warning("No configured symbols available; using fallback 'EURUSD'")
+            self.symbol = "EURUSD.sml"  # Fallback
+            self.logger.warning("No configured symbols available; using fallback 'EURUSD.sml'")
         self.calculate_time_offset()
 
     def calculate_time_offset(self) -> None:

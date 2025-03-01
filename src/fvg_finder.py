@@ -119,7 +119,8 @@ class FVGFinder:
 
     def find_reentry_fvg(self, df: pd.DataFrame, original_fvg: Dict, timeframe: TimeFrame, symbol: str) -> Optional[Dict]:
         """
-        Find FVG formation after price re-enters original FVG zone.
+        Find FVG formation after price mitigates an original FVG zone.
+        Tracks the chain of FVGs that form after mitigation events.
         """
         try:
             if not isinstance(df, pd.DataFrame) or df.empty:
@@ -140,51 +141,64 @@ class FVGFinder:
             fvg_top = original_fvg['top']
             fvg_bottom = original_fvg['bottom']
             min_size = self._get_min_size(symbol)
+            fvg_type = original_fvg['type']
             
-            reentry_found = False
-            reentry_idx = None
-            reentry_candle = None
-            
-            for idx in range(len(post_fvg_df) - 1):
+            # Find when the original FVG was mitigated
+            mitigation_idx = None
+            for idx in range(len(post_fvg_df)):
                 candle = post_fvg_df.iloc[idx]
-                next_candle = post_fvg_df.iloc[idx + 1]
                 
-                if original_fvg['type'] == 'bullish':
-                    if candle['low'] >= fvg_top and next_candle['low'] < fvg_top:
-                        reentry_found = True
-                        reentry_idx = idx + 1
-                        reentry_candle = next_candle
-                        break
-                else:  # bearish
-                    if candle['high'] <= fvg_bottom and next_candle['high'] > fvg_bottom:
-                        reentry_found = True
-                        reentry_idx = idx + 1
-                        reentry_candle = next_candle
-                        break
-            
-            if not reentry_found:
+                if fvg_type == 'bullish' and candle['low'] < fvg_top:
+                    mitigation_idx = idx
+                    break
+                elif fvg_type == 'bearish' and candle['high'] > fvg_bottom:
+                    mitigation_idx = idx
+                    break
+                    
+            if mitigation_idx is None:
+                # FVG not yet mitigated
                 return None
                 
-            reentry_df = post_fvg_df.iloc[reentry_idx:reentry_idx + 20]
-            
-            for i in range(len(reentry_df) - 3):
-                candle1 = reentry_df.iloc[i]
-                candle2 = reentry_df.iloc[i + 1]
-                candle3 = reentry_df.iloc[i + 2]
+            # Get data after mitigation for analysis
+            post_mitigation_df = post_fvg_df.iloc[mitigation_idx:].copy()
+            if len(post_mitigation_df) < 3:
+                return None
                 
+            # Look for new FVG formation after mitigation
+            for i in range(len(post_mitigation_df) - 3):
+                candle1 = post_mitigation_df.iloc[i]
+                candle2 = post_mitigation_df.iloc[i + 1]
+                candle3 = post_mitigation_df.iloc[i + 2]
+                
+                # Check if all three candles have closed
                 candles_closed = [
                     self.timeframe_utils.is_candle_closed(t, timeframe) 
                     for t in [candle1['time'], candle2['time'], candle3['time']]
                 ]
                 
+                # Skip if the third candle hasn't closed yet (critical from screenshot)
+                if not candles_closed[2]:
+                    continue
+                    
                 all_candles_closed = all(candles_closed)
                 
-                if original_fvg['type'] == 'bullish':
+                # Check for a new FVG of the same type as original
+                if fvg_type == 'bullish':
                     if candle3['low'] > candle1['high']:
                         gap_size = candle3['low'] - candle1['high']
-                        if (gap_size >= min_size and 
-                            candle2['high'] < candle3['low'] and
-                            candle1['time'] >= reentry_candle['time']):
+                        if gap_size >= min_size:
+                            # Check if this new FVG gets mitigated later
+                            new_fvg_mitigated = False
+                            mitigation_candle = None
+                            
+                            for j in range(i + 3, len(post_mitigation_df)):
+                                future_candle = post_mitigation_df.iloc[j]
+                                if future_candle['low'] < candle3['low']:
+                                    new_fvg_mitigated = True
+                                    mitigation_candle = future_candle
+                                    break
+                                    
+                            # Track chain of FVGs
                             return {
                                 "type": "bullish",
                                 "top": candle3['low'],
@@ -194,15 +208,27 @@ class FVGFinder:
                                 "is_confirmed": all_candles_closed,
                                 "reentry": True,
                                 "original_fvg_time": original_fvg['time'],
-                                "reentry_time": reentry_candle['time'],
-                                "reentry_price": reentry_candle['low']
+                                "mitigation_time": post_fvg_df.iloc[mitigation_idx]['time'],
+                                "new_fvg_mitigated": new_fvg_mitigated,
+                                "mitigation_candle_time": mitigation_candle['time'] if mitigation_candle else None,
+                                "chain_depth": original_fvg.get('chain_depth', 0) + 1
                             }
                 else:  # bearish
                     if candle3['high'] < candle1['low']:
                         gap_size = candle1['low'] - candle3['high']
-                        if (gap_size >= min_size and 
-                            candle2['low'] > candle3['high'] and
-                            candle1['time'] >= reentry_candle['time']):
+                        if gap_size >= min_size:
+                            # Check if this new FVG gets mitigated later
+                            new_fvg_mitigated = False
+                            mitigation_candle = None
+                            
+                            for j in range(i + 3, len(post_mitigation_df)):
+                                future_candle = post_mitigation_df.iloc[j]
+                                if future_candle['high'] > candle3['high']:
+                                    new_fvg_mitigated = True
+                                    mitigation_candle = future_candle
+                                    break
+                                    
+                            # Track chain of FVGs
                             return {
                                 "type": "bearish",
                                 "top": candle1['low'],
@@ -212,8 +238,10 @@ class FVGFinder:
                                 "is_confirmed": all_candles_closed,
                                 "reentry": True,
                                 "original_fvg_time": original_fvg['time'],
-                                "reentry_time": reentry_candle['time'],
-                                "reentry_price": reentry_candle['high']
+                                "mitigation_time": post_fvg_df.iloc[mitigation_idx]['time'],
+                                "new_fvg_mitigated": new_fvg_mitigated,
+                                "mitigation_candle_time": mitigation_candle['time'] if mitigation_candle else None,
+                                "chain_depth": original_fvg.get('chain_depth', 0) + 1
                             }
             
             return None
