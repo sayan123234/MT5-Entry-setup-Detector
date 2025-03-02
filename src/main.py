@@ -10,6 +10,7 @@ import atexit
 import signal
 from market_analyzer import MarketAnalyzer
 from time_sync import TimeSync
+from utils import is_trading_day
 
 def setup_logging():
     """Setup logging configuration with daily rotation"""
@@ -119,6 +120,13 @@ def main():
                 logging.info("Waiting 60 seconds before retrying due to MT5 connection failure...")
                 time.sleep(60)
                 continue
+                
+            # Check if it's a trading day (Monday-Friday) once per cycle
+            if not is_trading_day():
+                logging.info("Weekend detected. Skipping analysis cycle.")
+                time.sleep(3600)  # Sleep for an hour on weekends
+                continue
+                
             analyzer.analyze_markets()
             logging.info("Analysis cycle completed. Waiting for 5 minutes...")
             time.sleep(300)

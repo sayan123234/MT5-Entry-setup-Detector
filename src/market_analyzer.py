@@ -71,57 +71,77 @@ class MarketAnalyzer:
                 continue
 
     def _handle_complete_analysis(self, analysis: Dict):
-        """Handle complete analysis focusing on reentry setups for lowest timeframe"""
+        """
+        Handle complete analysis with hierarchical rules:
+        1. Check immediate lower timeframes for ST alerts
+        2. If no ST alerts found, check next lower timeframe for ST+RE
+        3. If neither found, send potential entry alert
+        """
         symbol = analysis['symbol']
         timeframe = analysis['timeframe']
         fvg = analysis['fvg']
         swing = analysis['swing']
 
+        # Skip if not confirmed or not mitigated
         if not fvg.get('is_confirmed', False) or not fvg.get('mitigated', False):
             return
 
-        ltf_list = self.timeframe_hierarchy.get(TimeFrame(timeframe), [])[:3]
+        # Get all lower timeframes
+        ltf_list = self.timeframe_hierarchy.get(TimeFrame(timeframe), [])
         if not ltf_list:
             return
 
-        entry_found = False
+        # Step 1: Check immediate lower timeframes for ST alerts (e.g., Weekly and Daily for Monthly)
+        # For typical case with Monthly HTF, this would check Weekly and Daily
+        immediate_ltf_count = min(2, len(ltf_list))
+        immediate_ltfs = ltf_list[:immediate_ltf_count]
+        st_found = False
 
-        # Process all timeframes except the lowest one for normal alerts
-        for ltf in ltf_list[:-1]:
+        for ltf in immediate_ltfs:
             try:
                 should_continue, ltf_analysis = self.fvg_finder.analyze_timeframe(symbol, ltf)
                 if ltf_analysis and ltf_analysis['fvg']['type'] == fvg['type']:
-                    # Add this check to ensure LTF FVG is confirmed
+                    # Only proceed if LTF FVG is confirmed
                     if ltf_analysis['fvg'].get('is_confirmed', False):
                         self._send_entry_alert(symbol, timeframe, ltf, fvg, ltf_analysis['fvg'])
-                        entry_found = True
+                        st_found = True
+                        # We found an ST setup, don't need to check other immediate timeframes
+                        break
             except Exception as e:
                 self.logger.error(f"Error checking {ltf} for {symbol}: {e}")
                 continue
 
-        # Handle the lowest timeframe with improved reentry detection
-        lowest_tf = ltf_list[-1]
-        try:
-            should_continue, ltf_analysis = self.fvg_finder.analyze_timeframe(symbol, lowest_tf)
-            if ltf_analysis and ltf_analysis['fvg']['type'] == fvg['type']:
-                if ltf_analysis['fvg'].get('is_confirmed', False):
-                    rates_df = pd.DataFrame(self.fvg_finder.get_cached_rates(symbol, lowest_tf))
+        # Step 2: If no ST found in immediate timeframes, check next lower timeframe for ST+RE
+        re_found = False
+        if not st_found and len(ltf_list) > immediate_ltf_count:
+            re_timeframe = ltf_list[immediate_ltf_count]  # Get the next timeframe (e.g., H4)
+            try:
+                # First check if there's a regular FVG in this timeframe
+                should_continue, ltf_analysis = self.fvg_finder.analyze_timeframe(symbol, re_timeframe)
+                if ltf_analysis and ltf_analysis['fvg']['type'] == fvg['type'] and ltf_analysis['fvg'].get('is_confirmed', False):
+                    # Get data for reentry analysis
+                    rates_df = pd.DataFrame(self.fvg_finder.get_cached_rates(symbol, re_timeframe))
                     rates_df['time'] = pd.to_datetime(rates_df['time'], unit='s')
                     
                     # First check if the original FVG is mitigated
                     if self.fvg_finder.is_fvg_mitigated(rates_df, ltf_analysis['fvg']):
                         # Then look for reentry FVG
-                        reentry_fvg = self.fvg_finder.find_reentry_fvg(rates_df, ltf_analysis['fvg'], lowest_tf, symbol)
+                        reentry_fvg = self.fvg_finder.find_reentry_fvg(rates_df, ltf_analysis['fvg'], re_timeframe, symbol)
                         
                         if reentry_fvg and reentry_fvg.get('is_confirmed', False):
-                            # Send a single type of reentry alert that includes chain depth information
-                            self._send_reentry_alert(symbol, timeframe, lowest_tf, fvg, reentry_fvg)
-                            entry_found = True
-        except Exception as e:
-            self.logger.error(f"Error checking reentry for {symbol} on {lowest_tf}: {e}")
+                            self._send_reentry_alert(symbol, timeframe, re_timeframe, fvg, reentry_fvg)
+                            re_found = True
+            except Exception as e:
+                self.logger.error(f"Error checking reentry for {symbol} on {re_timeframe}: {e}")
 
-        if not entry_found:
-            self._send_no_entry_alert(symbol, timeframe, fvg, ltf_list)
+        # Step 3: If neither ST nor ST+RE found, send potential entry alert
+        if not st_found and not re_found:
+            # We're checking the timeframes we actually looked at
+            checked_timeframes = immediate_ltfs
+            if len(ltf_list) > immediate_ltf_count:
+                checked_timeframes.append(ltf_list[immediate_ltf_count])
+                
+            self._send_no_entry_alert(symbol, timeframe, fvg, checked_timeframes)
 
     def _send_entry_alert(self, symbol, htf, ltf, htf_fvg, ltf_fvg):
         """Send alert for normal entry setup with enhanced content"""
