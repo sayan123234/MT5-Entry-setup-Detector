@@ -4,7 +4,7 @@ import logging
 import time
 import pandas as pd
 from typing import Optional
-from config_handler import ConfigHandler, TimeFrame
+from src.config.config_handler import ConfigHandler, TimeFrame
 
 class TimeSync:
     def __init__(self, config: ConfigHandler = None):

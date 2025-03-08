@@ -2,6 +2,37 @@
 
 A Python-based entry alert system for MetaTrader 5, inspired by Arjoio's trading concepts. This project automatically scans multiple financial instruments across hierarchical timeframes to identify and alert about FVG formations with entry setups.
 
+## Project Structure
+
+The project has been reorganized into a more modular structure with clear separation of concerns:
+
+```
+fvg_detector/
+├── config/
+│   └── config.yaml        # Configuration settings
+├── cache/                 # Cache directory for alerts
+├── logs/                  # Log files directory
+├── src/
+│   ├── core/              # Core business logic
+│   │   ├── fvg_finder.py  # FVG detection logic
+│   │   ├── market_analyzer.py # Analysis orchestration
+│   │   └── two_candle_rejection.py # 2CR pattern detection
+│   ├── config/            # Configuration handling
+│   │   └── config_handler.py # Configuration management
+│   ├── utils/             # Utility functions
+│   │   ├── alert_cache.py # Alert deduplication
+│   │   ├── helpers.py     # General utility functions
+│   │   └── time_sync.py   # Broker time synchronization
+│   ├── services/          # External services
+│   │   ├── mt5_service.py # MT5 specific operations
+│   │   └── telegram_service.py # Telegram notifications
+│   ├── tools/             # Standalone tools
+│   │   └── check_symbols.py # Symbol verification tool
+│   └── main.py            # Entry point
+├── requirements.txt       # Dependencies
+└── .env                   # Environment variables
+```
+
 ## Features
 
 ### Timeframe Analysis
@@ -16,7 +47,7 @@ A Python-based entry alert system for MetaTrader 5, inspired by Arjoio's trading
 - Three-candle pattern confirmation for stronger setups.
 
 ### Time Synchronization
-- The new `TimeSync` class handles broker time synchronization.
+- The `TimeSync` class handles broker time synchronization.
 - Automatically calculates the broker time offset.
 - Falls back to direct server time queries when needed.
 
@@ -38,31 +69,15 @@ A Python-based entry alert system for MetaTrader 5, inspired by Arjoio's trading
 - Graceful shutdown procedures.
 - Cross-platform timeout handling.
 
-## Project Structure
-
-```
-fvg_detector/
-├── config/
-│   └── config.yaml        # Configuration settings
-├── alert_cache_handler.py # Alert deduplication
-├── config_handler.py      # Configuration management
-├── fvg_finder.py         # Core detection logic
-├── main.py               # Entry point
-├── market_analyzer.py    # Analysis orchestration
-├── time_sync.py         # Broker time synchronization
-├── timeframe_utils.py    # Timeframe calculations
-├── utils.py             # Helper functions
-├── requirements.txt      # Dependencies
-└── .env                 # Environment variables
-```
 ## Symbol Verification  
 
-Before running the detector, ensure that your broker’s symbols match the ones defined in `config.yaml`. Brokers may use different symbol naming conventions, which can cause mismatches.  
+Before running the detector, ensure that your broker's symbols match the ones defined in `config.yaml`. Brokers may use different symbol naming conventions, which can cause mismatches.  
 
 To fetch and save all available MT5 symbols, run:  
 
 ```sh
-python check_and_save_symbols.py
+python -m src.tools.check_symbols
+```
 
 ## Configuration
 
@@ -79,32 +94,25 @@ TELEGRAM_CHAT_ID=your_chat_id
 
 ## Alert Examples
 
-### Standard Entry Alert (ST)
+### 2CR Alert (Two Candle Rejection)
 ```
-🚨 ST Setup: {symbol}
+🔄 2CR Setup: {symbol}
 📈 HTF: {timeframe} {type} FVG (Mitigated)
-📉 LTF: {ltf} {type} FVG detected
-🔝 LTF Top: {top}
-⬇ LTF Bottom: {bottom}
-🕒 LTF Time: {time}
+📉 LTF: {ltf} 2CR Pattern ({rejection_type})
+🔍 FVG Range: {bottom} - {top}
+📏 FVG Size: {size} pips
+🕒 First Candle: {first_candle_time}
+🕒 Second Candle: {second_candle_time}
+📊 Follow-through: ✅ Expected/Confirmed
 ```
 
-### Reentry Setup Alert (ST+RE)
+### Potential 2CR Alert
 ```
-🎯 ST+RE Setup: {symbol}
+⏳ Potential 2CR Setup: {symbol}
 📈 HTF: {timeframe} {type} FVG (Mitigated)
-📊 LTF: {ltf} Reentry FVG
-🔝 Top: {top}
-⬇ Bottom: {bottom}
-🕒 Time: {time}
-📍 Original FVG Time: {original_time}
-```
-
-### Watch Alert
-```
-⏳ Watch out for potential entry setups!: {symbol}
-📊 {timeframe} {type} FVG was mitigated
-🔍 No matching LTF FVGs found in: {timeframes}
+👀 Watch for 2CR pattern on: {timeframes}
+🔍 FVG Range: {bottom} - {top}
+📏 FVG Size: {size} pips
 ```
 
 ## Key Operational Features
@@ -143,6 +151,14 @@ python-dotenv
 requests
 ```
 
+## Running the Application
+
+To start the FVG detector:
+
+```sh
+python -m src.main
+```
+
 ## Important Notes
 - The system prioritizes H1 and higher timeframes for accuracy.
 - Reentry detection allows for additional trading opportunities.
@@ -154,4 +170,3 @@ requests
 Inspired by Arjoio's trading methodology. Check out his YouTube channel for more insights: [Arjoio's YouTube Channel](https://www.youtube.com/@Arjoio)
 
 ⚠️ **Always test in a demo environment before live trading!**
-

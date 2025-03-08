@@ -36,7 +36,7 @@ class TimeFrame(Enum):
 class ConfigHandler:
     def __init__(self, config_file=None):
         if config_file is None:
-            base_dir = Path(__file__).resolve().parent.parent
+            base_dir = Path(__file__).resolve().parent.parent.parent
             self.config_file = base_dir / "config" / "config.yaml"
         else:
             self.config_file = Path(config_file)
@@ -166,5 +166,3 @@ class ConfigHandler:
     @property
     def telegram_config(self) -> Dict[str, Any]:
         return self.config.get("telegram", {})
-    
-    

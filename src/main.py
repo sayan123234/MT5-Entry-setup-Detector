@@ -10,11 +10,12 @@ import atexit
 import signal
 import sys
 from typing import List, Optional
-from market_analyzer import MarketAnalyzer
-from time_sync import TimeSync
-from utils import is_trading_day
-from check_and_save_symbols import initialize_mt5_from_env
-from config_handler import ConfigHandler
+
+from src.core.market_analyzer import MarketAnalyzer
+from src.utils.time_sync import TimeSync
+from src.utils.helpers import is_trading_day
+from src.services.mt5_service import mt5_service
+from src.config.config_handler import ConfigHandler
 
 # Constants
 LOG_DIR = "logs"
@@ -68,9 +69,9 @@ def check_mt5_connection() -> bool:
     Returns:
         bool: True if connected, False otherwise
     """
-    if not mt5.terminal_info():
+    if not mt5_service.is_connected():
         logger.warning("MT5 connection lost. Attempting to reconnect...")
-        success, error_msg = initialize_mt5_from_env()
+        success, error_msg = mt5_service.initialize()
         if success:
             logger.info("MT5 connection restored")
             return True
@@ -97,8 +98,7 @@ def setup_signal_handlers() -> None:
 def cleanup() -> None:
     """Perform cleanup operations before exit"""
     logger.info("Performing cleanup...")
-    if mt5.terminal_info():
-        mt5.shutdown()
+    mt5_service.shutdown()
     logger.info("Cleanup completed")
 
 def check_unavailable_symbols(analyzer: MarketAnalyzer) -> List[str]:
@@ -138,7 +138,7 @@ def main() -> None:
         return
 
     # Initialize MT5
-    success, error_msg = initialize_mt5_from_env()
+    success, error_msg = mt5_service.initialize()
     if not success:
         logger.error(f"MT5 initialization failed: {error_msg}")
         return

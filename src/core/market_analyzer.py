@@ -1,11 +1,11 @@
 import logging
 import pandas as pd
 from typing import Dict, List, Optional
-from config_handler import ConfigHandler, TimeFrame
-from fvg_finder import FVGFinder
-from utils import send_telegram_alert
-from alert_cache_handler import AlertCache
-from time_sync import TimeSync
+from src.config.config_handler import ConfigHandler, TimeFrame
+from src.core.fvg_finder import FVGFinder
+from src.services.telegram_service import send_telegram_alert
+from src.utils.alert_cache import AlertCache
+from src.utils.time_sync import TimeSync
 import MetaTrader5 as mt5
 
 class MarketAnalyzer:
@@ -194,7 +194,7 @@ class MarketAnalyzer:
         
         # Send the alert
         try:
-            send_telegram_alert(message)  # Removed the chat_ids parameter
+            send_telegram_alert(message)
             self.logger.info(f"Sent 2CR alert for {symbol} {ltf} {alert_type}")
             
             # Cache the alert to prevent duplicates
@@ -255,7 +255,7 @@ class MarketAnalyzer:
         
         # Send the alert
         try:
-            send_telegram_alert(message)  # Removed the chat_ids parameter
+            send_telegram_alert(message)
             self.logger.info(f"Sent potential 2CR alert for {symbol} {htf}")
             
             # Cache the alert to prevent duplicates

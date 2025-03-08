@@ -1,11 +1,11 @@
 import pandas as pd
 import MetaTrader5 as mt5
 import logging
-from config_handler import TimeFrame, ConfigHandler
 from typing import Dict, Optional, Tuple
-from time_sync import TimeSync
 from functools import lru_cache
-from two_candle_rejection import TwoCandleRejection
+from src.config.config_handler import TimeFrame, ConfigHandler
+from src.utils.time_sync import TimeSync
+from src.core.two_candle_rejection import TwoCandleRejection
 
 class FVGFinder:
     def __init__(self, config: ConfigHandler = None, time_sync: TimeSync = None):

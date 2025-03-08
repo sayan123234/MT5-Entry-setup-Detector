@@ -1,7 +1,7 @@
 import pandas as pd
 import logging
 from typing import Dict, Optional, Tuple, List
-from config_handler import TimeFrame
+from src.config.config_handler import TimeFrame
 
 class TwoCandleRejection:
     """
