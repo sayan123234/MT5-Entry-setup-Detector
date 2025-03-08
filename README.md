@@ -52,10 +52,9 @@ fvg_detector/
 - Falls back to direct server time queries when needed.
 
 ### Alerting System
-- Three alert types:
-  - **Standard Entry Alerts** (ST)
-  - **Reentry Setup Alerts** (ST+RE)
-  - **Watch Alerts** for potential setups
+- Two alert types:
+  - **2CR Alerts** (Two Candle Rejection) - Main trading setup alerts
+  - **Potential 2CR Alerts** - Watch alerts for possible setups
 - Minute-precision deduplication prevents redundant alerts.
 - Telegram messaging with rate-limiting to avoid spam.
 
