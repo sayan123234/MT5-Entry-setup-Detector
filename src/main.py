@@ -8,138 +8,194 @@ from dotenv import load_dotenv
 import os
 import atexit
 import signal
+import sys
+from typing import List, Optional
 from market_analyzer import MarketAnalyzer
 from time_sync import TimeSync
 from utils import is_trading_day
+from check_and_save_symbols import initialize_mt5_from_env
 
-def setup_logging():
-    """Setup logging configuration with daily rotation"""
-    Path("logs").mkdir(exist_ok=True)
-    handler = logging.handlers.TimedRotatingFileHandler(
-        filename='logs/fvg_detector.log',
-        when='midnight',
-        interval=1,
-        backupCount=7
-    )
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logging.basicConfig(
-        level=logging.INFO,
-        handlers=[handler, logging.StreamHandler()]
-    )
+# Constants
+LOG_DIR = "logs"
+CACHE_DIR = "cache"
+ANALYSIS_INTERVAL = 300  # 5 minutes
+WEEKEND_SLEEP = 3600  # 1 hour
+RECONNECT_WAIT = 60  # 1 minute
+MT5_STABILIZE_WAIT = 2  # 2 seconds
 
-def initialize_mt5():
-    """Initialize MT5 with credentials from environment variables"""
-    max_retries = 3
-    retry_delay = 30
+# Initialize logger at module level
+logger = logging.getLogger(__name__)
+
+def setup_logging(log_level: int = logging.INFO) -> None:
+    """
+    Setup logging configuration with daily rotation.
     
-    login = os.getenv("MT5_LOGIN")
-    password = os.getenv("MT5_PASSWORD")
-    server = os.getenv("MT5_SERVER")
-    mt5_path = os.getenv("MT5_PATH")
-    
-    if not all([login, password, server, mt5_path]):
-        logging.error("MT5 credentials or path not properly configured in .env file")
-        return False
-    
+    Args:
+        log_level: Logging level (default: INFO)
+    """
     try:
-        login = int(login)
-    except ValueError:
-        logging.error("MT5_LOGIN must be a number")
-        return False
-    
-    for attempt in range(max_retries):
-        try:
-            if not mt5.initialize(path=mt5_path):
-                raise Exception(f"Failed to initialize MT5: {mt5.last_error()}")
-            if not mt5.login(login=login, password=password, server=server):
-                raise Exception(f"Failed to login: {mt5.last_error()}")
-            logging.info("Successfully connected to MT5")
-            return True
-        except Exception as e:
-            logging.error(f"MT5 initialization attempt {attempt + 1} failed: {e}")
-            if attempt < max_retries - 1:
-                logging.info(f"Retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
-    return False
+        Path(LOG_DIR).mkdir(exist_ok=True)
+        
+        # File handler with rotation
+        file_handler = logging.handlers.TimedRotatingFileHandler(
+            filename=f'{LOG_DIR}/fvg_detector.log',
+            when='midnight',
+            interval=1,
+            backupCount=7
+        )
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s'))
+        
+        # Console handler
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        
+        # Configure root logger
+        logging.basicConfig(
+            level=log_level,
+            handlers=[file_handler, console_handler]
+        )
+        
+        logger.info("Logging initialized")
+    except Exception as e:
+        print(f"Error setting up logging: {e}")
+        sys.exit(1)
 
-def check_mt5_connection():
-    """Check MT5 connection status and attempt reconnection if lost"""
+def check_mt5_connection() -> bool:
+    """
+    Check MT5 connection status and attempt reconnection if lost.
+    
+    Returns:
+        bool: True if connected, False otherwise
+    """
     if not mt5.terminal_info():
-        logging.warning("MT5 connection lost. Attempting to reconnect...")
-        if initialize_mt5():
-            logging.info("MT5 connection restored")
+        logger.warning("MT5 connection lost. Attempting to reconnect...")
+        success, error_msg = initialize_mt5_from_env()
+        if success:
+            logger.info("MT5 connection restored")
             return True
         else:
-            logging.error("Failed to restore MT5 connection")
+            logger.error(f"Failed to restore MT5 connection: {error_msg}")
             return False
     return True
 
-def signal_handler(signum, frame):
-    """Handle shutdown signals"""
-    logging.info("Shutdown signal received. Cleaning up...")
-    mt5.shutdown()
-    exit(0)
-
-def main():
-    load_dotenv(override=True)
-    setup_logging()
+def setup_signal_handlers() -> None:
+    """Setup signal handlers for graceful shutdown"""
+    def signal_handler(signum, frame):
+        """Handle shutdown signals"""
+        logger.info(f"Received signal {signum}. Shutting down...")
+        cleanup()
+        sys.exit(0)
     
+    # Register signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
+    # Register cleanup on normal exit
+    atexit.register(cleanup)
+
+def cleanup() -> None:
+    """Perform cleanup operations before exit"""
+    logger.info("Performing cleanup...")
+    if mt5.terminal_info():
+        mt5.shutdown()
+    logger.info("Cleanup completed")
+
+def check_unavailable_symbols(analyzer: MarketAnalyzer) -> List[str]:
+    """
+    Check for unavailable symbols in the watchlist.
+    
+    Args:
+        analyzer: Initialized MarketAnalyzer instance
+        
+    Returns:
+        List of unavailable symbols
+    """
+    unavailable = []
+    for symbol in analyzer.config.get_watchlist_symbols():
+        if mt5.symbol_info(symbol) is None:
+            unavailable.append(symbol)
+    
+    if unavailable:
+        logger.warning(f"These symbols are unavailable in MT5: {', '.join(unavailable)}")
+    
+    return unavailable
+
+def main() -> None:
+    """Main application entry point"""
+    # Load environment variables
+    load_dotenv(override=True)
+    
+    # Setup logging and signal handlers
+    setup_logging()
+    setup_signal_handlers()
+    
+    # Create necessary directories
     try:
-        Path("cache").mkdir(exist_ok=True, mode=0o755)
+        Path(CACHE_DIR).mkdir(exist_ok=True, mode=0o755)
     except Exception as e:
-        logging.error(f"Failed to create cache directory: {e}")
+        logger.error(f"Failed to create cache directory: {e}")
         return
 
-    if not initialize_mt5():
+    # Initialize MT5
+    success, error_msg = initialize_mt5_from_env()
+    if not success:
+        logger.error(f"MT5 initialization failed: {error_msg}")
         return
 
     # Wait briefly to ensure MT5 connection stabilizes
-    time.sleep(2)  # Give MT5 time to load symbol data
+    logger.info(f"Waiting {MT5_STABILIZE_WAIT}s for MT5 to stabilize...")
+    time.sleep(MT5_STABILIZE_WAIT)
 
+    # Initialize time synchronization
     time_sync = TimeSync()
     if time_sync._time_offset is None:
-        logging.error("Failed to synchronize time with MT5; proceeding with local time")
+        logger.warning("Failed to synchronize time with MT5; proceeding with local time")
+    else:
+        logger.info(f"Time synchronized with broker. Offset: {time_sync._time_offset}")
     
+    # Initialize market analyzer
     try:
+        logger.info("Initializing market analyzer...")
         analyzer = MarketAnalyzer(time_sync)
-        unavailable_symbols = [s for s in analyzer.config.get_watchlist_symbols() 
-                             if mt5.symbol_info(s) is None]
-        if unavailable_symbols:
-            logging.warning(f"These symbols are unavailable in MT5: {unavailable_symbols}")
+        check_unavailable_symbols(analyzer)
+        logger.info("Market analyzer initialized successfully")
     except ValueError as e:
-        logging.error(f"Failed to initialize analyzer: {e}")
-        mt5.shutdown()
+        logger.error(f"Failed to initialize analyzer: {e}")
+        cleanup()
         return
 
+    # Main analysis loop
+    logger.info("Starting main analysis loop")
     while True:
         try:
+            # Check MT5 connection
             if not check_mt5_connection():
-                logging.info("Waiting 60 seconds before retrying due to MT5 connection failure...")
-                time.sleep(60)
+                logger.info(f"Waiting {RECONNECT_WAIT}s before retrying due to MT5 connection failure...")
+                time.sleep(RECONNECT_WAIT)
                 continue
                 
-            # Check if it's a trading day (Monday-Friday) once per cycle
+            # Check if it's a trading day
             if not is_trading_day():
-                logging.info("Weekend detected. Skipping analysis cycle.")
-                time.sleep(3600)  # Sleep for an hour on weekends
+                logger.info(f"Weekend detected. Sleeping for {WEEKEND_SLEEP}s...")
+                time.sleep(WEEKEND_SLEEP)
                 continue
                 
+            # Run analysis
+            logger.info("Starting market analysis cycle...")
             analyzer.analyze_markets()
-            logging.info("Analysis cycle completed. Waiting for 5 minutes...")
-            time.sleep(300)
+            logger.info(f"Analysis cycle completed. Waiting for {ANALYSIS_INTERVAL}s...")
+            time.sleep(ANALYSIS_INTERVAL)
+            
         except KeyboardInterrupt:
-            logging.info("Manual shutdown initiated. Cleaning up...")
+            logger.info("Manual shutdown initiated")
             break
         except Exception as e:
-            logging.error(f"Error in main loop: {str(e)}")
-            logging.info("Retrying in 60 seconds...")
-            time.sleep(60)
-            continue
+            logger.error(f"Error in main loop: {str(e)}", exc_info=True)
+            logger.info(f"Retrying in {RECONNECT_WAIT}s...")
+            time.sleep(RECONNECT_WAIT)
     
-    mt5.shutdown()
+    # Final cleanup
+    cleanup()
 
 if __name__ == "__main__":
     main()

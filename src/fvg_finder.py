@@ -5,6 +5,7 @@ from config_handler import TimeFrame, ConfigHandler
 from typing import Dict, Optional, Tuple
 from timeframe_utils import TimeframeUtils
 from functools import lru_cache
+from two_candle_rejection import TwoCandleRejection
 
 class FVGFinder:
     def __init__(self):
@@ -12,6 +13,7 @@ class FVGFinder:
         self.logger = logging.getLogger(__name__)
         self.timeframe_utils = TimeframeUtils()
         self.fvg_min_sizes = self.config.fvg_settings.get('min_size', {'default': 0.0001})
+        self.two_candle_rejection = TwoCandleRejection()
 
     def _get_min_size(self, symbol: str) -> float:
         """Get minimum FVG size based on symbol type"""
@@ -117,139 +119,6 @@ class FVGFinder:
         
         return None
 
-    def find_reentry_fvg(self, df: pd.DataFrame, original_fvg: Dict, timeframe: TimeFrame, symbol: str) -> Optional[Dict]:
-        """
-        Find FVG formation after price mitigates an original FVG zone.
-        Tracks the chain of FVGs that form after mitigation events.
-        """
-        try:
-            if not isinstance(df, pd.DataFrame) or df.empty:
-                self.logger.error("Invalid or empty DataFrame provided")
-                return None
-                
-            if not isinstance(original_fvg, dict) or 'time' not in original_fvg:
-                self.logger.error("Invalid original FVG format")
-                return None
-                
-            if isinstance(original_fvg['time'], str):
-                original_fvg['time'] = pd.to_datetime(original_fvg['time'])
-                
-            post_fvg_df = df[df['time'] > original_fvg['time']].copy()
-            if len(post_fvg_df) < 3:
-                return None
-            
-            fvg_top = original_fvg['top']
-            fvg_bottom = original_fvg['bottom']
-            min_size = self._get_min_size(symbol)
-            fvg_type = original_fvg['type']
-            
-            # Find when the original FVG was mitigated
-            mitigation_idx = None
-            for idx in range(len(post_fvg_df)):
-                candle = post_fvg_df.iloc[idx]
-                
-                if fvg_type == 'bullish' and candle['low'] < fvg_top:
-                    mitigation_idx = idx
-                    break
-                elif fvg_type == 'bearish' and candle['high'] > fvg_bottom:
-                    mitigation_idx = idx
-                    break
-                    
-            if mitigation_idx is None:
-                # FVG not yet mitigated
-                return None
-                
-            # Get data after mitigation for analysis
-            post_mitigation_df = post_fvg_df.iloc[mitigation_idx:].copy()
-            if len(post_mitigation_df) < 3:
-                return None
-                
-            # Look for new FVG formation after mitigation
-            for i in range(len(post_mitigation_df) - 3):
-                candle1 = post_mitigation_df.iloc[i]
-                candle2 = post_mitigation_df.iloc[i + 1]
-                candle3 = post_mitigation_df.iloc[i + 2]
-                
-                # Check if all three candles have closed
-                candles_closed = [
-                    self.timeframe_utils.is_candle_closed(t, timeframe) 
-                    for t in [candle1['time'], candle2['time'], candle3['time']]
-                ]
-                
-                # Skip if the third candle hasn't closed yet (critical from screenshot)
-                if not candles_closed[2]:
-                    continue
-                    
-                all_candles_closed = all(candles_closed)
-                
-                # Check for a new FVG of the same type as original
-                if fvg_type == 'bullish':
-                    if candle3['low'] > candle1['high']:
-                        gap_size = candle3['low'] - candle1['high']
-                        if gap_size >= min_size:
-                            # Check if this new FVG gets mitigated later
-                            new_fvg_mitigated = False
-                            mitigation_candle = None
-                            
-                            for j in range(i + 3, len(post_mitigation_df)):
-                                future_candle = post_mitigation_df.iloc[j]
-                                if future_candle['low'] < candle3['low']:
-                                    new_fvg_mitigated = True
-                                    mitigation_candle = future_candle
-                                    break
-                                    
-                            # Track chain of FVGs
-                            return {
-                                "type": "bullish",
-                                "top": candle3['low'],
-                                "bottom": candle1['high'],
-                                "size": gap_size,
-                                "time": candle3['time'],
-                                "is_confirmed": all_candles_closed,
-                                "reentry": True,
-                                "original_fvg_time": original_fvg['time'],
-                                "mitigation_time": post_fvg_df.iloc[mitigation_idx]['time'],
-                                "new_fvg_mitigated": new_fvg_mitigated,
-                                "mitigation_candle_time": mitigation_candle['time'] if mitigation_candle else None,
-                                "chain_depth": original_fvg.get('chain_depth', 0) + 1
-                            }
-                else:  # bearish
-                    if candle3['high'] < candle1['low']:
-                        gap_size = candle1['low'] - candle3['high']
-                        if gap_size >= min_size:
-                            # Check if this new FVG gets mitigated later
-                            new_fvg_mitigated = False
-                            mitigation_candle = None
-                            
-                            for j in range(i + 3, len(post_mitigation_df)):
-                                future_candle = post_mitigation_df.iloc[j]
-                                if future_candle['high'] > candle3['high']:
-                                    new_fvg_mitigated = True
-                                    mitigation_candle = future_candle
-                                    break
-                                    
-                            # Track chain of FVGs
-                            return {
-                                "type": "bearish",
-                                "top": candle1['low'],
-                                "bottom": candle3['high'],
-                                "size": gap_size,
-                                "time": candle3['time'],
-                                "is_confirmed": all_candles_closed,
-                                "reentry": True,
-                                "original_fvg_time": original_fvg['time'],
-                                "mitigation_time": post_fvg_df.iloc[mitigation_idx]['time'],
-                                "new_fvg_mitigated": new_fvg_mitigated,
-                                "mitigation_candle_time": mitigation_candle['time'] if mitigation_candle else None,
-                                "chain_depth": original_fvg.get('chain_depth', 0) + 1
-                            }
-            
-            return None
-                
-        except Exception as e:
-            self.logger.error(f"Error finding reentry FVG: {e}")
-            return None
-
     def is_fvg_mitigated(self, df: pd.DataFrame, fvg: Dict) -> bool:
         """Check if price has entered the FVG zone"""
         fvg_top = fvg['top']
@@ -262,6 +131,20 @@ class FVGFinder:
         elif fvg['type'] == 'bearish':
             return (post_fvg_df['high'] > fvg_bottom).any()
         return False
+    
+    def find_two_candle_rejection(self, df: pd.DataFrame, fvg: Dict, timeframe: TimeFrame) -> Optional[Dict]:
+        """
+        Find Two Candle Rejection pattern after FVG mitigation.
+        
+        Args:
+            df: DataFrame with OHLC data
+            fvg: FVG information
+            timeframe: The timeframe being analyzed
+            
+        Returns:
+            Dictionary with 2CR details or None if no pattern found
+        """
+        return self.two_candle_rejection.find_2cr_pattern(df, fvg, timeframe)
     
     @lru_cache(maxsize=100)
     def get_cached_rates(self, symbol: str, timeframe: TimeFrame):

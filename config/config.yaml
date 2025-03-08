@@ -69,3 +69,6 @@ fvg_settings:
 
 telegram:
   enabled: true
+
+alert_settings:
+  send_potential_2cr_alerts: true  # Set to false if you don't want potential 2CR alerts

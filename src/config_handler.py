@@ -149,6 +149,9 @@ class ConfigHandler:
             symbols.extend(self._apply_suffix(symbol) for symbol in category)
         return symbols
 
+    def get_alert_settings(self) -> Dict[str, Any]:
+        return self.config.get("alert_settings", {})
+    
     def get_timeframes(self) -> Dict[TimeFrame, int]:
         timeframes_config = self.config.get("timeframes", {})
         timeframes = {}
@@ -163,3 +166,5 @@ class ConfigHandler:
     @property
     def telegram_config(self) -> Dict[str, Any]:
         return self.config.get("telegram", {})
+    
+    
