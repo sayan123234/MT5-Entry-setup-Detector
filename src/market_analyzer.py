@@ -1,6 +1,6 @@
 import logging
 import pandas as pd
-from typing import Dict, List
+from typing import Dict, List, Optional
 from config_handler import ConfigHandler, TimeFrame
 from fvg_finder import FVGFinder
 from utils import send_telegram_alert
@@ -9,16 +9,28 @@ from time_sync import TimeSync
 import MetaTrader5 as mt5
 
 class MarketAnalyzer:
-    def __init__(self, time_sync: TimeSync = None):
-        self.config = ConfigHandler()
+    def __init__(self, time_sync: Optional[TimeSync] = None, config: Optional[ConfigHandler] = None):
+        """
+        Initialize the Market Analyzer.
+        
+        Args:
+            time_sync: TimeSync instance (will create one if None)
+            config: ConfigHandler instance (will create one if None)
+        """
+        self.logger = logging.getLogger(__name__)
+        
+        # Initialize configuration
+        self.config = config or ConfigHandler()
         if not self.config.validate_timeframe_hierarchy():
             raise ValueError("Invalid timeframe hierarchy configuration")
         if not self.config.validate_symbols():
             self.logger.warning("Some symbols may be unavailable")
 
-        self.fvg_finder = FVGFinder()
-        self.logger = logging.getLogger(__name__)
-        self.time_sync = time_sync or TimeSync()
+        # Initialize time synchronization
+        self.time_sync = time_sync or TimeSync(config=self.config)
+        
+        # Initialize components with proper dependency injection
+        self.fvg_finder = FVGFinder(config=self.config, time_sync=self.time_sync)
         self.alert_cache = AlertCache(time_func=self.time_sync.get_current_broker_time)
         self.timeframe_hierarchy = self._filter_timeframe_hierarchy()
 

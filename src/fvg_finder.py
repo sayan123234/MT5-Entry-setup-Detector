@@ -3,15 +3,22 @@ import MetaTrader5 as mt5
 import logging
 from config_handler import TimeFrame, ConfigHandler
 from typing import Dict, Optional, Tuple
-from timeframe_utils import TimeframeUtils
+from time_sync import TimeSync
 from functools import lru_cache
 from two_candle_rejection import TwoCandleRejection
 
 class FVGFinder:
-    def __init__(self):
-        self.config = ConfigHandler()
+    def __init__(self, config: ConfigHandler = None, time_sync: TimeSync = None):
+        """
+        Initialize the FVG Finder.
+        
+        Args:
+            config: ConfigHandler instance (will create one if None)
+            time_sync: TimeSync instance (will create one if None)
+        """
         self.logger = logging.getLogger(__name__)
-        self.timeframe_utils = TimeframeUtils()
+        self.config = config or ConfigHandler()
+        self.time_sync = time_sync or TimeSync(config=self.config)
         self.fvg_min_sizes = self.config.fvg_settings.get('min_size', {'default': 0.0001})
         self.two_candle_rejection = TwoCandleRejection()
 
@@ -75,7 +82,7 @@ class FVGFinder:
             candle3_time = df.iloc[i + 2]['time']
             
             candles_closed = [
-                self.timeframe_utils.is_candle_closed(t, timeframe) 
+                self.time_sync.is_candle_closed(t, timeframe) 
                 for t in [candle1_time, candle2_time, candle3_time]
             ]
             

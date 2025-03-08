@@ -14,6 +14,7 @@ from market_analyzer import MarketAnalyzer
 from time_sync import TimeSync
 from utils import is_trading_day
 from check_and_save_symbols import initialize_mt5_from_env
+from config_handler import ConfigHandler
 
 # Constants
 LOG_DIR = "logs"
@@ -146,17 +147,22 @@ def main() -> None:
     logger.info(f"Waiting {MT5_STABILIZE_WAIT}s for MT5 to stabilize...")
     time.sleep(MT5_STABILIZE_WAIT)
 
+    # Initialize configuration
+    logger.info("Initializing configuration...")
+    config = ConfigHandler()
+    
     # Initialize time synchronization
-    time_sync = TimeSync()
+    logger.info("Initializing time synchronization...")
+    time_sync = TimeSync(config=config)
     if time_sync._time_offset is None:
         logger.warning("Failed to synchronize time with MT5; proceeding with local time")
     else:
         logger.info(f"Time synchronized with broker. Offset: {time_sync._time_offset}")
     
-    # Initialize market analyzer
+    # Initialize market analyzer with proper dependency injection
     try:
         logger.info("Initializing market analyzer...")
-        analyzer = MarketAnalyzer(time_sync)
+        analyzer = MarketAnalyzer(time_sync=time_sync, config=config)
         check_unavailable_symbols(analyzer)
         logger.info("Market analyzer initialized successfully")
     except ValueError as e:
