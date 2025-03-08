@@ -82,12 +82,40 @@ class MarketAnalyzer:
                 self.logger.error(f"Error analyzing {symbol} in {timeframe}: {e}")
                 continue
 
+    def _check_same_timeframe_2cr(self, symbol: str, htf: str, fvg: Dict) -> Optional[Dict]:
+        """
+        Check for 2CR pattern in the same timeframe as the FVG.
+        
+        Args:
+            symbol: Symbol name
+            htf: Higher timeframe
+            fvg: FVG information
+            
+        Returns:
+            Two candle rejection pattern information or None if not found
+        """
+        try:
+            # Get data for this timeframe
+            rates_df = pd.DataFrame(self.fvg_finder.get_cached_rates(symbol, TimeFrame(htf)))
+            if rates_df.empty:
+                return None
+                
+            rates_df['time'] = pd.to_datetime(rates_df['time'], unit='s')
+            
+            # Look for 2CR pattern in the same timeframe
+            two_cr = self.fvg_finder.find_two_candle_rejection(rates_df, fvg, TimeFrame(htf))
+            return two_cr
+        except Exception as e:
+            self.logger.error(f"Error checking same timeframe 2CR for {symbol} on {htf}: {e}")
+            return None
+
     def _handle_complete_analysis(self, analysis: Dict):
         """
         Handle complete analysis using 2 Candle Rejection (2CR) logic
         
         Implementation focuses on:
         - HTF FVG mitigation
+        - Same timeframe 2CR pattern detection
         - LTF 2CR pattern detection
         - Follow-through analysis
         """
@@ -100,9 +128,19 @@ class MarketAnalyzer:
         if not fvg.get('is_confirmed', False) or not fvg.get('mitigated', False):
             return
 
+        # First, check for 2CR pattern in the same timeframe as the FVG
+        same_tf_two_cr = self._check_same_timeframe_2cr(symbol, htf, fvg)
+        if same_tf_two_cr:
+            self.logger.info(f"Found 2CR pattern in same timeframe {htf} for {symbol}")
+            self._send_same_timeframe_2cr_alert(symbol, htf, fvg, same_tf_two_cr)
+            return
+
+        # If no 2CR found in the same timeframe, check lower timeframes
         # Get immediate lower timeframes to check for 2CR patterns
         ltf_list = self.timeframe_hierarchy.get(TimeFrame(htf), [])
         if not ltf_list:
+            # If no lower timeframes available, send potential alert for same timeframe
+            self._send_potential_2cr_alert(symbol, htf, fvg, [TimeFrame(htf)])
             return
 
         # Typically check the first two lower timeframes (e.g., Weekly and Daily for Monthly)
@@ -134,7 +172,7 @@ class MarketAnalyzer:
                 self.logger.error(f"Error checking 2CR for {symbol} on {ltf}: {e}")
                 continue
 
-        # If no 2CR found, check for potential opportunities
+        # If no 2CR found in any timeframe, check for potential opportunities
         if not two_cr_found:
             self._send_potential_2cr_alert(symbol, htf, fvg, check_tfs)
 
@@ -206,6 +244,75 @@ class MarketAnalyzer:
             )
         except Exception as e:
             self.logger.error(f"Failed to send 2CR alert: {e}")
+
+    def _send_same_timeframe_2cr_alert(self, symbol, htf, fvg, two_cr):
+        """Send alert for 2 Candle Rejection pattern in the same timeframe as the FVG"""
+        rejection_type = two_cr['rejection_type']
+        alert_type = f"same_tf_2cr_{rejection_type}_{two_cr['type']}"
+        
+        # Use the time of the second candle in the 2CR pattern as the identifier
+        second_candle_time = two_cr['second_candle']['time']
+        fvg_time = second_candle_time.strftime('%Y%m%d%H%M')
+        
+        if self.alert_cache.is_duplicate(symbol=symbol, timeframe=htf, fvg_type=alert_type, fvg_time=fvg_time):
+            self.logger.info(f"Skipping duplicate same timeframe 2CR alert for {symbol} {htf} {alert_type}")
+            return
+
+        # Get symbol info for pip calculation
+        symbol_info = mt5.symbol_info(symbol)
+        pip_size = symbol_info.point if symbol_info else 0.0001  # Fallback to 0.0001 if unavailable
+        fvg_size_pips = (fvg['top'] - fvg['bottom']) / pip_size
+        
+        # Get current price for distance calculation
+        tick = mt5.symbol_info_tick(symbol)
+        current_price = tick.bid if tick else None
+        
+        # Build the alert message
+        rejection_emoji = "🔄" if rejection_type == "second_candle" else "✅"
+        follow_through_status = "✅ Expected" if not two_cr.get('has_follow_through', False) else "✅ Confirmed"
+        ugly_warning = "⚠️ Ugly 2CR detected (consolidation likely)" if two_cr.get('is_ugly', False) else ""
+        
+        message = (
+            f"{rejection_emoji} SAME TF 2CR Setup: {symbol}\n"
+            f"📈 Timeframe: {htf}\n"
+            f"📊 Pattern: {fvg['type']} FVG with 2CR ({rejection_type.replace('_', ' ')})\n"
+            f"🔍 FVG Range: {fvg['bottom']:.5f} - {fvg['top']:.5f}\n"
+            f"📏 FVG Size: {fvg_size_pips:.1f} pips\n"
+            f"🕒 First Candle: {two_cr['first_candle']['time'].strftime('%Y-%m-%d %H:%M')}\n"
+            f"🕒 Second Candle: {two_cr['second_candle']['time'].strftime('%Y-%m-%d %H:%M')}\n"
+            f"📊 Follow-through: {follow_through_status}\n"
+            f"{ugly_warning}"
+        )
+        
+        # Add current price info if available
+        if current_price:
+            distance_to_top = (fvg['top'] - current_price) / pip_size if current_price < fvg['top'] else 0
+            distance_to_bottom = (current_price - fvg['bottom']) / pip_size if current_price > fvg['bottom'] else 0
+            
+            if two_cr['type'] == 'bullish':
+                target_distance = distance_to_top
+                target_label = "to top"
+            else:
+                target_distance = distance_to_bottom
+                target_label = "to bottom"
+                
+            message += f"\n💰 Current Price: {current_price:.5f}\n"
+            message += f"📍 Distance {target_label}: {target_distance:.1f} pips"
+        
+        # Send the alert
+        try:
+            send_telegram_alert(message)
+            self.logger.info(f"Sent same timeframe 2CR alert for {symbol} {htf} {alert_type}")
+            
+            # Cache the alert to prevent duplicates
+            self.alert_cache.add_alert(
+                symbol=symbol,
+                timeframe=htf,
+                fvg_type=alert_type,
+                fvg_time=fvg_time
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to send same timeframe 2CR alert: {e}")
 
     def _send_potential_2cr_alert(self, symbol, htf, fvg, check_tfs):
         """Send alert for potential 2CR setup based on HTF FVG mitigation"""

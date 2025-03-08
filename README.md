@@ -41,10 +41,12 @@ fvg_detector/
 - Lower timeframes (M15, M5, M1) are filtered out for reliability.
 
 ### Advanced Pattern Detection
-- Identifies standard and reentry FVGs for multiple trading opportunities.
+- Identifies Fair Value Gaps (FVGs) and looks for Two Candle Rejection (2CR) patterns in:
+  - The same timeframe as the FVG (primary detection)
+  - Lower timeframes (secondary detection)
 - Candle closure validation ensures accurate signals.
 - Tracks mitigation events to avoid false signals.
-- Three-candle pattern confirmation for stronger setups.
+- Detects follow-through confirmation for stronger setups.
 
 ### Time Synchronization
 - The `TimeSync` class handles broker time synchronization.
@@ -93,11 +95,23 @@ TELEGRAM_CHAT_ID=your_chat_id
 
 ## Alert Examples
 
-### 2CR Alert (Two Candle Rejection)
+### Same Timeframe 2CR Alert
+```
+🔄 SAME TF 2CR Setup: {symbol}
+📈 Timeframe: {timeframe}
+📊 Pattern: {type} FVG with 2CR ({rejection_type})
+🔍 FVG Range: {bottom} - {top}
+📏 FVG Size: {size} pips
+🕒 First Candle: {first_candle_time}
+🕒 Second Candle: {second_candle_time}
+📊 Follow-through: ✅ Expected/Confirmed
+```
+
+### Lower Timeframe 2CR Alert
 ```
 🔄 2CR Setup: {symbol}
-📈 HTF: {timeframe} {type} FVG (Mitigated)
-📉 LTF: {ltf} 2CR Pattern ({rejection_type})
+📈 HTF: {htf_timeframe} {type} FVG (Mitigated)
+📉 LTF: {ltf_timeframe} 2CR Pattern ({rejection_type})
 🔍 FVG Range: {bottom} - {top}
 📏 FVG Size: {size} pips
 🕒 First Candle: {first_candle_time}
@@ -160,10 +174,23 @@ python -m src.main
 
 ## Important Notes
 - The system prioritizes H1 and higher timeframes for accuracy.
-- Reentry detection allows for additional trading opportunities.
+- 2CR patterns are detected in both the same timeframe as the FVG and lower timeframes, providing more trading opportunities.
+- Same timeframe 2CR patterns are prioritized over lower timeframe patterns.
 - Time synchronization ensures correct candle closure validation.
 - Alerts are deduplicated with minute-level precision.
 - Cache management is automated with size limits.
+
+## Trading Strategy
+The detector implements a trading strategy based on Fair Value Gaps (FVGs) and Two Candle Rejection (2CR) patterns:
+
+1. **FVG Detection**: Identifies price gaps created when price moves rapidly in one direction.
+2. **FVG Mitigation**: Waits for price to return to the FVG area.
+3. **2CR Pattern Detection**: After FVG mitigation, looks for a two-candle rejection pattern in:
+   - The same timeframe as the FVG (primary detection)
+   - Lower timeframes if no pattern is found in the same timeframe (secondary detection)
+4. **Entry Signal**: Generates an alert when a complete setup is found.
+
+This dual-timeframe approach provides high-quality trading setups with clear entry points and defined risk parameters, offering more trading opportunities while maintaining signal quality.
 
 ## Credits
 Inspired by Arjoio's trading methodology. Check out his YouTube channel for more insights: [Arjoio's YouTube Channel](https://www.youtube.com/@Arjoio)
