@@ -281,11 +281,11 @@ def main() -> None:
                 time.sleep(RECONNECT_WAIT)
                 continue
                 
-            # # Check if it's a trading day
-            # if not is_trading_day():
-            #     logger.info(f"Weekend detected. Sleeping for {WEEKEND_SLEEP}s...")
-            #     time.sleep(WEEKEND_SLEEP)
-            #     continue
+            # Check if it's a trading day
+            if not is_trading_day():
+                logger.info(f"Weekend detected. Sleeping for {WEEKEND_SLEEP}s...")
+                time.sleep(WEEKEND_SLEEP)
+                continue
                 
             # Run analysis
             logger.info("Starting market analysis cycle...")
