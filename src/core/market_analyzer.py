@@ -3,6 +3,9 @@ import pandas as pd
 from typing import Dict, List, Optional
 from src.config.config_handler import ConfigHandler, TimeFrame
 from src.core.fvg_finder import FVGFinder
+from src.core.candle_classifier import CandleClassifier
+from src.core.pd_rays import PDRays
+from src.core.trading_strategy import TradingStrategy
 from src.services.telegram_service import send_telegram_alert
 from src.utils.alert_cache import AlertCache
 from src.utils.time_sync import TimeSync
@@ -33,6 +36,11 @@ class MarketAnalyzer:
         self.fvg_finder = FVGFinder(config=self.config, time_sync=self.time_sync)
         self.alert_cache = AlertCache(time_func=self.time_sync.get_current_broker_time)
         self.timeframe_hierarchy = self._filter_timeframe_hierarchy()
+        
+        # Initialize new components
+        self.candle_classifier = CandleClassifier()
+        self.pd_rays = PDRays(fvg_finder=self.fvg_finder)
+        self.trading_strategy = TradingStrategy(config=self.config)
 
     def _filter_timeframe_hierarchy(self) -> Dict[TimeFrame, list]:
         """Filter timeframe hierarchy to only include H1 and above timeframes"""
@@ -111,13 +119,14 @@ class MarketAnalyzer:
 
     def _handle_complete_analysis(self, analysis: Dict):
         """
-        Handle complete analysis using 2 Candle Rejection (2CR) logic
+        Handle complete analysis using 2 Candle Rejection (2CR) logic and enhanced strategy framework
         
         Implementation focuses on:
         - HTF FVG mitigation
         - Same timeframe 2CR pattern detection
         - LTF 2CR pattern detection
         - Follow-through analysis
+        - PD Rays identification and narrative establishment
         """
         symbol = analysis['symbol']
         htf = analysis['timeframe']
@@ -175,6 +184,35 @@ class MarketAnalyzer:
         # If no 2CR found in any timeframe, check for potential opportunities
         if not two_cr_found:
             self._send_potential_2cr_alert(symbol, htf, fvg, check_tfs)
+            
+        # Enhanced analysis using PD Rays and Trading Strategy
+        try:
+            # Get data for this timeframe
+            rates_df = pd.DataFrame(self.fvg_finder.get_cached_rates(symbol, TimeFrame(htf)))
+            if not rates_df.empty:
+                rates_df['time'] = pd.to_datetime(rates_df['time'], unit='s')
+                
+                # Get current price
+                tick = mt5.symbol_info_tick(symbol)
+                current_price = tick.bid if tick else rates_df.iloc[-1]['close']
+                
+                # Identify PD Rays
+                pd_rays_data = self.pd_rays.identify_pd_rays(rates_df, symbol, TimeFrame(htf))
+                
+                # Determine direction
+                direction = self.pd_rays.determine_direction(pd_rays_data, current_price)
+                
+                # Classify candles
+                candle_classifications = self.candle_classifier.analyze_candle_sequence(rates_df, lookback=5)
+                
+                # Establish narrative
+                narrative = self.pd_rays.establish_narrative(pd_rays_data, direction, candle_classifications)
+                
+                # If we have a strong directional bias with high confidence, send an alert
+                if direction.get("confidence", 0) > 70:
+                    self._send_directional_bias_alert(symbol, htf, direction, narrative)
+        except Exception as e:
+            self.logger.error(f"Error in enhanced analysis for {symbol} on {htf}: {e}")
 
     def _send_2cr_alert(self, symbol, htf, ltf, htf_fvg, ltf_fvg, two_cr):
         """Send alert for 2 Candle Rejection pattern"""
@@ -314,6 +352,61 @@ class MarketAnalyzer:
         except Exception as e:
             self.logger.error(f"Failed to send same timeframe 2CR alert: {e}")
 
+    def _send_directional_bias_alert(self, symbol, htf, direction, narrative):
+        """Send alert for strong directional bias based on PD Rays analysis"""
+        alert_type = f"directional_bias_{direction['direction']}"
+        
+        # Use the current time as the identifier
+        from datetime import datetime
+        current_time = datetime.now().strftime('%Y%m%d%H%M')
+        
+        if self.alert_cache.is_duplicate(symbol=symbol, timeframe=htf, fvg_type=alert_type, fvg_time=current_time):
+            self.logger.info(f"Skipping duplicate directional bias alert for {symbol} {htf} {alert_type}")
+            return
+            
+        # Get symbol info for pip calculation
+        symbol_info = mt5.symbol_info(symbol)
+        
+        # Build the alert message
+        direction_emoji = "📈" if direction["direction"] == "bullish" else "📉" if direction["direction"] == "bearish" else "↔️"
+        confidence = direction.get("confidence", 0)
+        
+        message = (
+            f"{direction_emoji} Strong {direction['direction'].capitalize()} Bias: {symbol}\n"
+            f"📊 Timeframe: {htf}\n"
+            f"🔍 Confidence: {confidence:.1f}%\n"
+        )
+        
+        # Add narrative details if available
+        if narrative:
+            if narrative.get("target"):
+                message += f"🎯 Target: {narrative['target']:.5f}\n"
+            if narrative.get("stop_loss"):
+                message += f"🛑 Stop Loss: {narrative['stop_loss']:.5f}\n"
+            if narrative.get("description"):
+                message += f"📝 Analysis: {narrative['description']}\n"
+        
+        # Add reasons from direction analysis
+        if direction.get("reasons"):
+            message += f"\n📋 Key Factors:\n"
+            for reason in direction["reasons"]:
+                message += f"• {reason}\n"
+        
+        # Send the alert
+        try:
+            send_telegram_alert(message)
+            self.logger.info(f"Sent directional bias alert for {symbol} {htf} {alert_type}")
+            
+            # Cache the alert to prevent duplicates
+            self.alert_cache.add_alert(
+                symbol=symbol,
+                timeframe=htf,
+                fvg_type=alert_type,
+                fvg_time=current_time
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to send directional bias alert: {e}")
+    
     def _send_potential_2cr_alert(self, symbol, htf, fvg, check_tfs):
         """Send alert for potential 2CR setup based on HTF FVG mitigation"""
         alert_type = f"potential_2cr_{fvg['type']}"

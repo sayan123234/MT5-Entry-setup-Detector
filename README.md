@@ -16,7 +16,10 @@ fvg_detector/
 │   ├── core/              # Core business logic
 │   │   ├── fvg_finder.py  # FVG detection logic
 │   │   ├── market_analyzer.py # Analysis orchestration
-│   │   └── two_candle_rejection.py # 2CR pattern detection
+│   │   ├── two_candle_rejection.py # 2CR pattern detection
+│   │   ├── candle_classifier.py # Candle type classification
+│   │   ├── pd_rays.py    # Premium/Discount Arrays handling
+│   │   └── trading_strategy.py # Complete trading framework
 │   ├── config/            # Configuration handling
 │   │   └── config_handler.py # Configuration management
 │   ├── utils/             # Utility functions
@@ -48,15 +51,43 @@ fvg_detector/
 - Tracks mitigation events to avoid false signals.
 - Detects follow-through confirmation for stronger setups.
 
+### Candle Classification
+- **Disrespect Candles**: Large body with small wicks, indicating strong trend continuation.
+- **Respect Candles**: Long wicks with small body, indicating price respecting a key level.
+- Pattern detection between consecutive candles for trend analysis.
+
+### PD Rays (Premium/Discount Arrays)
+- Identifies critical price levels where markets reverse or accelerate:
+  - Fair Value Gaps (FVGs)
+  - Swing Highs/Lows
+  - Previous Candle Highs/Lows
+- Determines market direction based on PD Ray analysis.
+- Establishes trading narrative based on price movement relative to PD Rays.
+
+### Complete Trading Strategy Framework
+- **Step 1**: Identify PD Rays across multiple timeframes.
+- **Step 2**: Determine market direction with confidence scoring.
+- **Step 3**: Establish narrative (where price is coming from and where it's going).
+- **Step 4**: Two Candle Rejection Strategy for entry timing.
+- **Step 5**: Entries and Risk Management with specific stop loss and target levels.
+
+### Risk Management
+- Calculates risk-reward ratios for potential trades.
+- Implements breakeven rules (move stops to breakeven once a new FVG forms).
+- Sets targets based on the next PD Ray in the direction of the trade.
+- Provides comprehensive trade plans with entry, stop loss, and target levels.
+
 ### Time Synchronization
 - The `TimeSync` class handles broker time synchronization.
 - Automatically calculates the broker time offset.
 - Falls back to direct server time queries when needed.
 
 ### Alerting System
-- Two alert types:
+- Multiple alert types:
   - **2CR Alerts** (Two Candle Rejection) - Main trading setup alerts
   - **Potential 2CR Alerts** - Watch alerts for possible setups
+  - **Directional Bias Alerts** - Strong market bias alerts
+  - **Trade Plan Alerts** - Comprehensive trade plans with entry, stop loss, and target
 - Minute-precision deduplication prevents redundant alerts.
 - Telegram messaging with rate-limiting to avoid spam.
 
@@ -91,6 +122,17 @@ MT5_SERVER=your_broker_server
 MT5_PATH=path_to_mt5_terminal
 TELEGRAM_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
+```
+
+### Detailed Analysis Configuration
+In `config.yaml`, you can enable detailed analysis for specific symbols:
+```yaml
+detailed_analysis:
+  enabled: true  # Set to false to disable detailed analysis
+  symbols:
+    - "EURUSD.sml"
+    - "GBPUSD.sml"
+    - "XAUUSD.sml"
 ```
 
 ## Alert Examples
@@ -128,6 +170,29 @@ TELEGRAM_CHAT_ID=your_chat_id
 📏 FVG Size: {size} pips
 ```
 
+### Directional Bias Alert
+```
+📈 Strong Bullish Bias: {symbol}
+📊 Timeframe: {timeframe}
+🔍 Confidence: {confidence}%
+🎯 Target: {target}
+🛑 Stop Loss: {stop_loss}
+📝 Analysis: {description}
+```
+
+### Trade Plan Alert
+```
+📈 Trade Plan: {symbol}
+📊 Bias: Bullish (75.5%)
+⏱️ Entry Timeframe: H4
+✅ Entry: Enter now at 1.10500
+🎯 Target: 1.11200
+🛑 Stop Loss: 1.10200
+⚖️ Risk-Reward: 1:2.33
+🔒 Breakeven: 1.10733
+📝 Breakeven Rule: Move stop to breakeven once a new FVG forms in the direction of the trade
+```
+
 ## Key Operational Features
 
 ### Performance Optimizations
@@ -140,6 +205,7 @@ TELEGRAM_CHAT_ID=your_chat_id
 - Mitigation checks before sending alerts.
 - Rate-limited alerts to prevent spam.
 - Duplicate prevention using timestamp-based deduplication.
+- Risk-reward calculation for trade evaluation.
 
 ### Error Recovery
 - Automatic MT5 reconnection for stability.
@@ -181,16 +247,30 @@ python -m src.main
 - Cache management is automated with size limits.
 
 ## Trading Strategy
-The detector implements a trading strategy based on Fair Value Gaps (FVGs) and Two Candle Rejection (2CR) patterns:
+The detector implements a comprehensive trading strategy framework:
 
-1. **FVG Detection**: Identifies price gaps created when price moves rapidly in one direction.
-2. **FVG Mitigation**: Waits for price to return to the FVG area.
-3. **2CR Pattern Detection**: After FVG mitigation, looks for a two-candle rejection pattern in:
-   - The same timeframe as the FVG (primary detection)
-   - Lower timeframes if no pattern is found in the same timeframe (secondary detection)
-4. **Entry Signal**: Generates an alert when a complete setup is found.
+### Core Concepts
+1. **Candle Types**:
+   - **Disrespect Candle**: Large body with small wicks, indicating strong trend continuation.
+   - **Respect Candle**: Long wicks with small body, indicating price respecting a key level.
 
-This dual-timeframe approach provides high-quality trading setups with clear entry points and defined risk parameters, offering more trading opportunities while maintaining signal quality.
+2. **PD Rays (Premium/Discount Arrays)**:
+   - Critical price levels where markets reverse or accelerate.
+   - Includes FVGs, Swing Highs/Lows, and Previous Candle Highs/Lows.
+
+### Step-by-Step Framework
+1. **Identify PD Rays**: Mark FVGs, swing points, and previous candle extremes on higher timeframes.
+2. **Determine Direction**: Analyze if the next candle is likely to be bullish or bearish based on trend context and respect/disrespect of PD Rays.
+3. **Establish Narrative**: Determine where price is coming from and where it's going.
+4. **Two Candle Rejection Strategy**: Look for first candle rejection or second candle sweep and rejection at PD Rays.
+5. **Entries and Risk Management**: Use lower timeframes to refine entries after higher timeframe confirmation, with clear stop loss and target levels.
+
+### Practical Application
+- Multi-timeframe alignment: Higher timeframes guide direction; lower timeframes refine entries.
+- Probability over certainty: Focus on high-probability setups.
+- Synergy of candle patterns and key levels creates a robust predictive framework.
+
+This approach provides high-quality trading setups with clear entry points and defined risk parameters, offering more trading opportunities while maintaining signal quality.
 
 ## Credits
 Inspired by Arjoio's trading methodology. Check out his YouTube channel for more insights: [Arjoio's YouTube Channel](https://www.youtube.com/@Arjoio)

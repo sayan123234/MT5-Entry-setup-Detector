@@ -72,3 +72,11 @@ telegram:
 
 alert_settings:
   send_potential_2cr_alerts: true  # Set to false if you don't want potential 2CR alerts
+
+# Detailed analysis settings
+detailed_analysis:
+  enabled: true  # Set to false to disable detailed analysis
+  symbols:
+    - "EURUSD.sml"
+    - "GBPUSD.sml"
+    - "XAUUSD.sml"
