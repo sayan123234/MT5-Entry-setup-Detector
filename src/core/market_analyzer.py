@@ -223,8 +223,14 @@ class MarketAnalyzer:
         second_candle_time = two_cr['second_candle']['time']
         fvg_time = second_candle_time.strftime('%Y%m%d%H%M')
         
+        # Check for exact duplicates
         if self.alert_cache.is_duplicate(symbol=symbol, timeframe=ltf.value, fvg_type=alert_type, fvg_time=fvg_time):
             self.logger.info(f"Skipping duplicate 2CR alert for {symbol} {ltf} {alert_type}")
+            return
+            
+        # Check for similar recent alerts (within 5 minutes)
+        if self.alert_cache.is_recent_alert(symbol=symbol, timeframe=ltf.value, fvg_type=alert_type):
+            self.logger.info(f"Skipping recent similar 2CR alert for {symbol} {ltf} {alert_type}")
             return
 
         # Get symbol info for pip calculation
@@ -292,8 +298,14 @@ class MarketAnalyzer:
         second_candle_time = two_cr['second_candle']['time']
         fvg_time = second_candle_time.strftime('%Y%m%d%H%M')
         
+        # Check for exact duplicates
         if self.alert_cache.is_duplicate(symbol=symbol, timeframe=htf, fvg_type=alert_type, fvg_time=fvg_time):
             self.logger.info(f"Skipping duplicate same timeframe 2CR alert for {symbol} {htf} {alert_type}")
+            return
+            
+        # Check for similar recent alerts (within 5 minutes)
+        if self.alert_cache.is_recent_alert(symbol=symbol, timeframe=htf, fvg_type=alert_type):
+            self.logger.info(f"Skipping recent similar same timeframe 2CR alert for {symbol} {htf} {alert_type}")
             return
 
         # Get symbol info for pip calculation
@@ -360,8 +372,14 @@ class MarketAnalyzer:
         from datetime import datetime
         current_time = datetime.now().strftime('%Y%m%d%H%M')
         
+        # Check for exact duplicates
         if self.alert_cache.is_duplicate(symbol=symbol, timeframe=htf, fvg_type=alert_type, fvg_time=current_time):
             self.logger.info(f"Skipping duplicate directional bias alert for {symbol} {htf} {alert_type}")
+            return
+            
+        # Check for similar recent alerts (within 5 minutes)
+        if self.alert_cache.is_recent_alert(symbol=symbol, timeframe=htf, fvg_type=alert_type):
+            self.logger.info(f"Skipping recent similar directional bias alert for {symbol} {htf} {alert_type}")
             return
             
         # Get symbol info for pip calculation
@@ -412,8 +430,13 @@ class MarketAnalyzer:
         alert_type = f"potential_2cr_{fvg['type']}"
         fvg_time = pd.to_datetime(fvg['time']).strftime('%Y%m%d%H%M')
         
-        # Prevent duplicate alerts
+        # Check for exact duplicates
         if self.alert_cache.is_duplicate(symbol=symbol, timeframe=htf, fvg_type=alert_type, fvg_time=fvg_time):
+            return
+            
+        # Check for similar recent alerts (within 5 minutes)
+        if self.alert_cache.is_recent_alert(symbol=symbol, timeframe=htf, fvg_type=alert_type):
+            self.logger.info(f"Skipping recent similar potential 2CR alert for {symbol} {htf}")
             return
             
         # Only send potential alerts if enabled in config

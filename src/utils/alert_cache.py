@@ -92,6 +92,42 @@ class AlertCache:
         alert_key = self._generate_alert_key(symbol, timeframe, fvg_type, fvg_time)
         return alert_key in self.alerts
 
+    def is_recent_alert(self, symbol: str, timeframe: str, fvg_type: str, minutes: int = 5) -> bool:
+        """
+        Check if a similar alert (same symbol+timeframe+type) was sent within the last X minutes.
+        
+        Args:
+            symbol: Trading symbol
+            timeframe: Chart timeframe
+            fvg_type: Type of FVG pattern
+            minutes: Time window to check (default 5 minutes)
+            
+        Returns:
+            bool: True if similar alert was sent recently, False otherwise
+        """
+        self._check_date_change()
+        current_time = self.time_func()
+        time_threshold = current_time - timedelta(minutes=minutes)
+        
+        # Check all alerts for matching pattern
+        for alert_key, alert_time_str in self.alerts.items():
+            key_parts = alert_key.split('|')
+            if len(key_parts) != 4:
+                continue
+                
+            if (key_parts[0] == symbol and 
+                key_parts[1] == timeframe and 
+                key_parts[2] == fvg_type):
+                
+                try:
+                    alert_time = datetime.fromisoformat(alert_time_str)
+                    if alert_time > time_threshold:
+                        return True
+                except ValueError:
+                    continue
+                    
+        return False
+
     def add_alert(self, symbol: str, timeframe: str, fvg_type: str, fvg_time: str) -> None:
         """Add a new alert to the cache"""
         alert_key = self._generate_alert_key(symbol, timeframe, fvg_type, fvg_time)
